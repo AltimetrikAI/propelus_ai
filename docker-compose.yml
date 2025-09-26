@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: propelus_postgres
+    environment:
+      POSTGRES_DB: propelus_taxonomy
+      POSTGRES_USER: propelus_admin
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/migrations:/docker-entrypoint-initdb.d:ro
+      - ./data/seeds:/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propelus_admin -d propelus_taxonomy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - propelus_network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: propelus_redis
+    command: redis-server --appendonly yes --requirepass dev_redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taxonomy-network
+
+  # Taxonomy API Service
+  taxonomy-api:
+    build:
+      context: ./services/taxonomy-api
+      dockerfile: Dockerfile
+    container_name: taxonomy-api
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/taxonomy_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/taxonomy-api:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - taxonomy-network
+
+  # Translation Service
+  translation-service:
+    build:
+      context: ./services/translation-service
+      dockerfile: Dockerfile
+    container_name: translation-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/taxonomy_db
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      TAXONOMY_API_URL: http://taxonomy-api:8000
+      AWS_REGION: us-east-1
+      # AWS credentials should be provided via environment or IAM role
+      ENVIRONMENT: development
+      LOG_LEVEL: DEBUG
+    ports:
+      - "8001:8001"
+    depends_on:
+      - taxonomy-api
+      - redis
+    volumes:
+      - ./services/translation-service:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    networks:
+      - taxonomy-network
+
+  # Admin UI
+  admin-ui:
+    build:
+      context: ./services/admin-ui
+      dockerfile: Dockerfile
+    container_name: admin-ui
+    environment:
+      API_BASE_URL: http://taxonomy-api:8000/api/v1
+      TRANSLATION_API_URL: http://translation-service:8001/api/v1
+    ports:
+      - "8501:8501"
+    depends_on:
+      - taxonomy-api
+      - translation-service
+    volumes:
+      - ./services/admin-ui:/app
+    command: streamlit run app.py --server.port=8501 --server.address=0.0.0.0
+    networks:
+      - taxonomy-network
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: taxonomy-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@propelus.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - taxonomy-network
+    profiles:
+      - tools
+
+  # Redis Commander for cache management (optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: taxonomy-redis-commander
+    environment:
+      REDIS_HOSTS: redis:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - taxonomy-network
+    profiles:
+      - tools
+
+  # LocalStack for AWS services emulation (optional)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: taxonomy-localstack
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      SERVICES: s3,sqs,secretsmanager,bedrock
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      LAMBDA_EXECUTOR: local
+      HOST_TMP_FOLDER: ${TMPDIR:-/tmp/}localstack
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - taxonomy-network
+    profiles:
+      - local-aws
+
+networks:
+  taxonomy-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:

@@ -1,0 +1,768 @@
+# Propelus AI Taxonomy Framework - API Documentation
+
+## Overview
+
+The Propelus Taxonomy API provides comprehensive endpoints for managing healthcare profession taxonomy mappings, translations, and administrative operations. The API follows REST principles and returns JSON responses.
+
+## Base URL
+
+- **Development**: `http://localhost:8000/api/v1`
+- **Production**: `https://api.propelus.ai/v1`
+
+## Authentication
+
+### API Key Authentication (Production)
+```bash
+curl -H "X-API-Key: your-api-key" https://api.propelus.ai/v1/taxonomies
+```
+
+### Development (No Auth Required)
+```bash
+curl http://localhost:8000/api/v1/taxonomies
+```
+
+## Common Response Format
+
+### Success Response
+```json
+{
+  "status": "success",
+  "data": { ... },
+  "timestamp": "2025-01-26T12:00:00Z"
+}
+```
+
+### Error Response
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Invalid input parameters",
+    "details": { ... }
+  },
+  "timestamp": "2025-01-26T12:00:00Z"
+}
+```
+
+## Endpoints
+
+### 1. Taxonomy Management
+
+#### List Taxonomies
+```http
+GET /taxonomies
+```
+
+**Parameters:**
+- `type` (optional): Filter by type (`master` or `customer`)
+- `status` (optional): Filter by status (`active` or `inactive`)
+- `customer_id` (optional): Filter by customer ID
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/v1/taxonomies?type=customer&status=active"
+```
+
+**Response:**
+```json
+[
+  {
+    "taxonomy_id": 1,
+    "customer_id": 123,
+    "name": "Customer Healthcare Taxonomy",
+    "type": "customer",
+    "status": "active",
+    "created_at": "2025-01-20T10:00:00Z"
+  }
+]
+```
+
+#### Get Taxonomy Details
+```http
+GET /taxonomies/{taxonomy_id}
+```
+
+**Example:**
+```bash
+curl http://localhost:8000/api/v1/taxonomies/1
+```
+
+#### Get Taxonomy Nodes
+```http
+GET /taxonomies/{taxonomy_id}/nodes
+```
+
+**Parameters:**
+- `node_type_id` (optional): Filter by node type
+- `parent_node_id` (optional): Filter by parent node
+
+**Example:**
+```bash
+curl "http://localhost:8000/api/v1/taxonomies/1/nodes?node_type_id=3"
+```
+
+**Response:**
+```json
+[
+  {
+    "node_id": 101,
+    "node_type": {
+      "id": 3,
+      "name": "Profession",
+      "level": 6
+    },
+    "parent_node_id": 95,
+    "value": "Registered Nurse",
+    "created_at": "2025-01-20T10:00:00Z"
+  }
+]
+```
+
+### 2. Data Ingestion
+
+#### Ingest Taxonomy Data
+```http
+POST /ingestion/bronze/taxonomies
+```
+
+**Request Body:**
+```json
+{
+  "customer_id": 123,
+  "data": [
+    {
+      "node_type": "profession",
+      "value": "Registered Nurse",
+      "parent_id": null,
+      "attributes": {
+        "state": "CA",
+        "license_type": "RN"
+      }
+    }
+  ],
+  "source_name": "Customer Upload 2025-01",
+  "overwrite": false
+}
+```
+
+**Response:**
+```json
+{
+  "source_id": 456,
+  "status": "processing",
+  "records_processed": 1,
+  "message": "Taxonomy ingestion started for customer 123",
+  "estimated_processing_time": "2-5 minutes"
+}
+```
+
+#### Ingest Profession Data
+```http
+POST /ingestion/bronze/professions
+```
+
+**Request Body:**
+```json
+{
+  "customer_id": 123,
+  "data": [
+    {
+      "profession_code": "RN",
+      "profession_name": "Registered Nurse",
+      "state": "CA",
+      "issuing_authority": "California Board of Nursing",
+      "license_type": "active"
+    }
+  ],
+  "source_name": "Profession Import"
+}
+```
+
+#### Bulk Data Ingestion
+```http
+POST /ingestion/bronze/bulk
+```
+
+**Request Body:**
+```json
+{
+  "customer_id": 123,
+  "taxonomies": [ ... ],
+  "professions": [ ... ],
+  "source_name": "Complete Data Import"
+}
+```
+
+#### Check Ingestion Status
+```http
+GET /ingestion/status/{source_id}
+```
+
+**Response:**
+```json
+{
+  "source_id": 456,
+  "status": "completed",
+  "record_count": 150,
+  "created_at": "2025-01-26T10:00:00Z",
+  "processed_at": "2025-01-26T10:05:00Z",
+  "error_message": null,
+  "processing_stages": [
+    {
+      "stage": "bronze_ingestion",
+      "status": "completed",
+      "records_processed": 150,
+      "records_failed": 0,
+      "processing_time_ms": 2500,
+      "timestamp": "2025-01-26T10:01:00Z"
+    }
+  ]
+}
+```
+
+### 3. Translation Service
+
+#### Translate Single Code
+```http
+POST /translate
+```
+
+**Request Body:**
+```json
+{
+  "source_taxonomy": "customer_123",
+  "target_taxonomy": "master",
+  "source_code": "RN",
+  "attributes": {
+    "state": "CA",
+    "issuing_authority": "California Board of Nursing"
+  },
+  "options": {
+    "include_alternatives": true,
+    "min_confidence": 70.0
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "source_taxonomy": "customer_123",
+  "target_taxonomy": "master",
+  "source_code": "RN",
+  "source_match": {
+    "node_id": 101,
+    "value": "Registered Nurse",
+    "taxonomy_name": "Customer 123 Taxonomy"
+  },
+  "matches": [
+    {
+      "target_code": "Registered Nurse - Acute Care",
+      "target_node_id": 2001,
+      "confidence": 95.2,
+      "layer": "gold",
+      "node_type": "Profession"
+    },
+    {
+      "target_code": "Registered Nurse - General",
+      "target_node_id": 2002,
+      "confidence": 87.5,
+      "layer": "silver",
+      "node_type": "Profession",
+      "authority_override": true
+    }
+  ],
+  "status": "success",
+  "total_matches": 2,
+  "timestamp": "2025-01-26T12:00:00Z",
+  "processing_time_ms": 150
+}
+```
+
+#### Bulk Translation
+```http
+POST /translate/bulk
+```
+
+**Request Body:**
+```json
+{
+  "source_taxonomy": "customer_123",
+  "target_taxonomy": "evercheck",
+  "codes": [
+    {
+      "code": "RN",
+      "attributes": { "state": "CA" }
+    },
+    {
+      "code": "LPN",
+      "attributes": { "state": "CA" }
+    }
+  ],
+  "global_attributes": {
+    "license_type": "active"
+  },
+  "options": {
+    "min_confidence": 80.0
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "source_taxonomy": "customer_123",
+  "target_taxonomy": "evercheck",
+  "results": [ ... ],
+  "summary": {
+    "successful": 2,
+    "failed": 0,
+    "no_matches": 0,
+    "multiple_matches": 1,
+    "high_confidence": 2
+  },
+  "total_processed": 2,
+  "processing_time_ms": 450
+}
+```
+
+#### Translation Patterns
+```http
+GET /translate/patterns
+```
+
+**Parameters:**
+- `source_taxonomy` (optional): Filter by source taxonomy
+- `target_taxonomy` (optional): Filter by target taxonomy
+- `is_ambiguous` (optional): Filter ambiguous cases
+- `min_requests` (optional): Minimum request count (default: 2)
+
+**Response:**
+```json
+{
+  "patterns": [
+    {
+      "pattern_id": 1,
+      "source_taxonomy": "customer_123",
+      "target_taxonomy": "master",
+      "source_code": "RN",
+      "source_attributes": {"state": "CA"},
+      "result_count": 2,
+      "result_codes": ["Registered Nurse - Acute Care", "Registered Nurse - General"],
+      "is_ambiguous": true,
+      "request_count": 25,
+      "first_requested": "2025-01-20T10:00:00Z",
+      "last_requested": "2025-01-26T11:30:00Z"
+    }
+  ],
+  "total": 1
+}
+```
+
+#### Submit Translation Feedback
+```http
+POST /translate/feedback
+```
+
+**Request Body:**
+```json
+{
+  "source_taxonomy": "customer_123",
+  "target_taxonomy": "master",
+  "source_code": "RN",
+  "attributes": {"state": "CA"},
+  "feedback_type": "incorrect",
+  "correct_target_code": "Registered Nurse - Critical Care",
+  "comments": "The suggested mapping was too generic"
+}
+```
+
+### 4. Mapping Management
+
+#### Get Review Queue
+```http
+GET /mappings/review-queue
+```
+
+**Parameters:**
+- `customer_id` (optional): Filter by customer
+- `mapping_type` (optional): `taxonomy` or `profession`
+- `min_confidence` (optional): Minimum confidence (0-100)
+- `max_confidence` (optional): Maximum confidence (0-100)
+- `limit` (optional): Number of results (default: 50)
+
+**Response:**
+```json
+{
+  "mappings": [
+    {
+      "mapping_id": 789,
+      "mapping_type": "taxonomy",
+      "source_node": {
+        "node_id": 101,
+        "value": "RN",
+        "type": "profession",
+        "taxonomy": "customer_123",
+        "customer_id": 123
+      },
+      "target_node": {
+        "node_id": 2001,
+        "value": "Registered Nurse",
+        "type": "profession",
+        "taxonomy": "master"
+      },
+      "confidence": 82.5,
+      "status": "pending_review",
+      "created_at": "2025-01-26T10:00:00Z",
+      "layer": "silver"
+    }
+  ],
+  "total": 1,
+  "pending_count": 15,
+  "high_confidence_count": 8,
+  "needs_review_count": 7
+}
+```
+
+#### Approve Mapping
+```http
+POST /mappings/{mapping_id}/approve
+```
+
+**Query Parameters:**
+- `mapping_type`: `taxonomy` or `profession`
+
+**Request Body:**
+```json
+{
+  "notes": "Approved after review",
+  "confidence_override": 95.0
+}
+```
+
+**Response:**
+```json
+{
+  "mapping_id": 789,
+  "status": "approved",
+  "promoted_to_gold": true,
+  "message": "Taxonomy mapping approved and promoted to Gold layer"
+}
+```
+
+#### Reject Mapping
+```http
+POST /mappings/{mapping_id}/reject
+```
+
+**Request Body:**
+```json
+{
+  "reason": "Incorrect mapping - too generic",
+  "alternative_target_id": 2002,
+  "notes": "Should map to specific specialty"
+}
+```
+
+#### Create Manual Mapping
+```http
+POST /mappings/create
+```
+
+**Request Body:**
+```json
+{
+  "source_node_id": 101,
+  "target_node_id": 2001,
+  "confidence": 100.0,
+  "mapping_type": "taxonomy",
+  "notes": "Manual mapping by domain expert"
+}
+```
+
+#### Bulk Mapping Actions
+```http
+POST /mappings/bulk-action
+```
+
+**Query Parameters:**
+- `mapping_type`: `taxonomy` or `profession`
+
+**Request Body:**
+```json
+{
+  "mapping_ids": [789, 790, 791],
+  "action": "approve",
+  "notes": "Bulk approval of high-confidence mappings"
+}
+```
+
+### 5. Administrative Operations
+
+#### Dashboard Statistics
+```http
+GET /admin/dashboard
+```
+
+**Parameters:**
+- `customer_id` (optional): Filter by customer
+
+**Response:**
+```json
+{
+  "timestamp": "2025-01-26T12:00:00Z",
+  "customer_id": null,
+  "review_queue": {
+    "pending_review": 15,
+    "high_confidence": 8,
+    "active_mappings": 1250,
+    "rejected_mappings": 23
+  },
+  "processing": {
+    "currently_processing": 2,
+    "completed": 145,
+    "failed": 3,
+    "processed_24h": 12
+  },
+  "content": {
+    "active_taxonomies": 5,
+    "total_nodes": 12500,
+    "node_types": 6
+  }
+}
+```
+
+#### Detailed Review Queue
+```http
+GET /admin/review-queue
+```
+
+**Parameters:**
+- `customer_id` (optional)
+- `confidence_min` (optional): 0-100
+- `confidence_max` (optional): 0-100
+- `node_type` (optional): Filter by node type name
+- `sort_by` (optional): `confidence_asc`, `confidence_desc`, `created_desc`
+- `limit` (optional): Max results
+- `offset` (optional): Pagination offset
+
+#### Create Master Taxonomy Node
+```http
+POST /admin/master-taxonomy/nodes
+```
+
+**Request Body:**
+```json
+{
+  "node_type_id": 6,
+  "parent_node_id": 2000,
+  "value": "Certified Registered Nurse Anesthetist",
+  "attributes": {
+    "specialty": "anesthesia",
+    "certification_required": true
+  }
+}
+```
+
+#### Update Master Taxonomy Node
+```http
+PUT /admin/master-taxonomy/nodes/{node_id}
+```
+
+**Request Body:**
+```json
+{
+  "value": "Certified Registered Nurse Anesthetist (CRNA)",
+  "attributes": {
+    "specialty": "anesthesia",
+    "certification_required": true,
+    "advanced_practice": true
+  }
+}
+```
+
+#### Data Lineage
+```http
+GET /admin/data-lineage/{entity_type}/{entity_id}
+```
+
+**Parameters:**
+- `entity_type`: `mapping`, `node`, or `profession`
+- `entity_id`: ID of the entity
+- `include_related` (optional): Include related entities (default: true)
+
+**Response:**
+```json
+{
+  "entity_type": "mapping",
+  "entity_id": 789,
+  "lineage_path": [
+    {
+      "stage": "bronze_ingestion",
+      "timestamp": "2025-01-26T10:00:00Z",
+      "source_id": 456,
+      "data": { ... }
+    },
+    {
+      "stage": "silver_processing",
+      "timestamp": "2025-01-26T10:01:00Z",
+      "transformations": [ ... ]
+    }
+  ],
+  "related_entities": [ ... ],
+  "audit_trail": [ ... ]
+}
+```
+
+#### System Reprocessing
+```http
+POST /admin/system/reprocess
+```
+
+**Query Parameters:**
+- `processing_type`: `failed_only`, `all`, or `mapping_rules`
+- `customer_id` (optional): Filter by customer
+
+**Response:**
+```json
+{
+  "status": "triggered",
+  "processing_type": "failed_only",
+  "sources_queued": 5,
+  "estimated_completion_time": "10-25 minutes"
+}
+```
+
+### 6. Health and Monitoring
+
+#### API Health Check
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-01-26T12:00:00Z",
+  "version": "1.0.0",
+  "environment": "production",
+  "services": {
+    "database": "healthy",
+    "redis": "healthy",
+    "external_apis": "healthy"
+  }
+}
+```
+
+#### Translation Service Health
+```http
+GET /translate/health
+```
+
+**Response:**
+```json
+{
+  "timestamp": "2025-01-26T12:00:00Z",
+  "statistics": {
+    "total_requests_24h": 1250,
+    "successful_translations": 1198,
+    "success_rate": 95.84,
+    "ambiguous_cases": 52,
+    "ambiguity_rate": 4.16,
+    "avg_results_per_request": 1.8,
+    "unique_source_taxonomies": 5,
+    "unique_target_taxonomies": 3
+  },
+  "status": "healthy"
+}
+```
+
+## Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| VALIDATION_ERROR | 400 | Invalid request parameters |
+| AUTHENTICATION_ERROR | 401 | Invalid API key or authentication |
+| AUTHORIZATION_ERROR | 403 | Insufficient permissions |
+| NOT_FOUND | 404 | Resource not found |
+| CONFLICT | 409 | Resource already exists |
+| RATE_LIMIT_EXCEEDED | 429 | Too many requests |
+| INTERNAL_ERROR | 500 | Server error |
+| SERVICE_UNAVAILABLE | 503 | Temporary service unavailability |
+
+## Rate Limiting
+
+- **Development**: No limits
+- **Production**: 1000 requests/minute per API key
+- **Burst**: Up to 2000 requests/minute for short periods
+
+Rate limit headers:
+```
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 995
+X-RateLimit-Reset: 1643211600
+```
+
+## SDK Examples
+
+### Python
+```python
+import requests
+
+class PropellusTaxonomyClient:
+    def __init__(self, base_url, api_key=None):
+        self.base_url = base_url
+        self.headers = {'Content-Type': 'application/json'}
+        if api_key:
+            self.headers['X-API-Key'] = api_key
+
+    def translate(self, source_taxonomy, target_taxonomy, source_code, attributes=None):
+        data = {
+            'source_taxonomy': source_taxonomy,
+            'target_taxonomy': target_taxonomy,
+            'source_code': source_code,
+            'attributes': attributes or {}
+        }
+        response = requests.post(f'{self.base_url}/translate', json=data, headers=self.headers)
+        return response.json()
+
+# Usage
+client = PropellusTaxonomyClient('https://api.propelus.ai/v1', 'your-api-key')
+result = client.translate('customer_123', 'master', 'RN', {'state': 'CA'})
+```
+
+### JavaScript
+```javascript
+class PropellusTaxonomyClient {
+    constructor(baseUrl, apiKey = null) {
+        this.baseUrl = baseUrl;
+        this.headers = { 'Content-Type': 'application/json' };
+        if (apiKey) this.headers['X-API-Key'] = apiKey;
+    }
+
+    async translate(sourceTaxonomy, targetTaxonomy, sourceCode, attributes = {}) {
+        const response = await fetch(`${this.baseUrl}/translate`, {
+            method: 'POST',
+            headers: this.headers,
+            body: JSON.stringify({
+                source_taxonomy: sourceTaxonomy,
+                target_taxonomy: targetTaxonomy,
+                source_code: sourceCode,
+                attributes
+            })
+        });
+        return response.json();
+    }
+}
+
+// Usage
+const client = new PropellusTaxonomyClient('https://api.propelus.ai/v1', 'your-api-key');
+const result = await client.translate('customer_123', 'master', 'RN', { state: 'CA' });
+```
+
+---
+
+*Last Updated: January 26, 2025*
+*API Version: 1.0*

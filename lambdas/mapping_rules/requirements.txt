@@ -1,0 +1,5 @@
+boto3==1.34.144
+sqlalchemy==2.0.31
+psycopg2-binary==2.9.9
+fuzzywuzzy==0.18.0
+python-levenshtein==0.21.1
