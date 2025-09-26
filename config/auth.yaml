@@ -1,0 +1,159 @@
+# Propelus AI Taxonomy Framework - Backend Authentication Configuration
+# This configuration manages authentication between internal backend services
+
+authentication:
+  # Primary authentication method for backend-to-backend communication
+  primary_method: api_key  # Options: api_key, oauth2, mutual_tls
+
+  # Fallback authentication method
+  fallback_method: oauth2
+
+# API Key Configuration
+api_key:
+  enabled: true
+  header_name: X-API-Key
+  validation:
+    min_length: 32
+    require_prefix: true
+    prefix: "prop_"
+
+  # Service-specific API keys (stored securely in AWS Secrets Manager)
+  services:
+    evercheck:
+      key_id: "prop_evercheck_prod"
+      permissions:
+        - translate:read
+        - translate:write
+        - taxonomy:read
+      rate_limit: 10000  # requests per hour
+
+    datasolutions:
+      key_id: "prop_datasolutions_prod"
+      permissions:
+        - translate:read
+        - translate:write
+        - taxonomy:read
+        - admin:read
+      rate_limit: 10000
+
+    admin_ui:
+      key_id: "prop_admin_prod"
+      permissions:
+        - "*"  # Full access
+      rate_limit: 5000
+
+    testing:
+      key_id: "prop_test_dev"
+      permissions:
+        - translate:read
+        - taxonomy:read
+      rate_limit: 1000
+      environments:
+        - development
+        - staging
+
+# OAuth2 Configuration (Alternative/Fallback)
+oauth2:
+  enabled: true
+  token_endpoint: /oauth/token
+  grant_type: client_credentials
+  token_lifetime_seconds: 3600
+  refresh_enabled: true
+
+  # Client registrations
+  clients:
+    evercheck:
+      client_id: evercheck-service
+      redirect_uri: https://evercheck.propelus.ai/callback
+      scopes:
+        - translate.read
+        - translate.write
+        - taxonomy.read
+
+    datasolutions:
+      client_id: datasolutions-service
+      scopes:
+        - translate.read
+        - translate.write
+        - taxonomy.read
+        - admin.read
+
+# Mutual TLS (Future Enhancement)
+mutual_tls:
+  enabled: false
+  ca_cert_path: /certs/ca.pem
+  verify_client: true
+  allowed_cns:
+    - evercheck.propelus.ai
+    - datasolutions.propelus.ai
+    - admin.propelus.ai
+
+# Rate Limiting
+rate_limiting:
+  enabled: true
+  default_limit: 1000  # requests per hour
+  burst_limit: 100     # burst requests
+  headers:
+    limit: X-RateLimit-Limit
+    remaining: X-RateLimit-Remaining
+    reset: X-RateLimit-Reset
+
+# IP Whitelisting (Additional Security)
+ip_whitelist:
+  enabled: false
+  allowed_ips:
+    - 10.0.0.0/8     # Internal network
+    - 172.16.0.0/12  # VPC CIDR
+  allowed_services:
+    evercheck:
+      - 52.12.34.56  # EverCheck production IP
+    datasolutions:
+      - 52.12.34.57  # DataSolutions production IP
+
+# Service Discovery
+service_discovery:
+  method: dns  # Options: dns, consul, eureka
+  dns:
+    evercheck: evercheck-service.propelus.local
+    datasolutions: datasolutions-service.propelus.local
+    admin: admin-service.propelus.local
+
+# Security Headers
+security_headers:
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+
+# Audit Logging
+audit:
+  enabled: true
+  log_successful_auth: true
+  log_failed_auth: true
+  log_api_calls: true
+  retention_days: 90
+
+# Environment-specific overrides
+environments:
+  development:
+    authentication:
+      primary_method: api_key
+    rate_limiting:
+      enabled: false
+    ip_whitelist:
+      enabled: false
+
+  staging:
+    authentication:
+      primary_method: api_key
+    rate_limiting:
+      default_limit: 5000
+
+  production:
+    authentication:
+      primary_method: api_key
+      require_https: true
+    rate_limiting:
+      default_limit: 10000
+    ip_whitelist:
+      enabled: true

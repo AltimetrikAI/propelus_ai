@@ -2,24 +2,43 @@
 
 ## Overview
 
-The Propelus Taxonomy API provides comprehensive endpoints for managing healthcare profession taxonomy mappings, translations, and administrative operations. The API follows REST principles and returns JSON responses.
+The Propelus Taxonomy API provides comprehensive endpoints for managing healthcare profession taxonomy mappings, translations, and administrative operations. **This API is designed for backend-to-backend communication** between internal Propelus services (EverCheck, DataSolutions, etc.) and is not intended for direct client access. The API follows REST principles and returns JSON responses.
 
 ## Base URL
 
 - **Development**: `http://localhost:8000/api/v1`
+- **Staging**: `https://staging-api.propelus.ai/v1`
 - **Production**: `https://api.propelus.ai/v1`
 
 ## Authentication
 
-### API Key Authentication (Production)
+### API Key Authentication (Backend Services)
 ```bash
-curl -H "X-API-Key: your-api-key" https://api.propelus.ai/v1/taxonomies
+curl -H "X-API-Key: service-api-key" https://api.propelus.ai/v1/translate
+```
+
+### OAuth2 Client Credentials (Alternative)
+```bash
+# Get token
+curl -X POST https://api.propelus.ai/oauth/token \
+  -d "grant_type=client_credentials" \
+  -d "client_id=your-client-id" \
+  -d "client_secret=your-client-secret"
+
+# Use token
+curl -H "Authorization: Bearer <token>" https://api.propelus.ai/v1/translate
 ```
 
 ### Development (No Auth Required)
 ```bash
-curl http://localhost:8000/api/v1/taxonomies
+curl http://localhost:8000/api/v1/translate
 ```
+
+## OpenAPI Documentation
+
+Complete OpenAPI 3.0 specification is available:
+- **Swagger UI**: `/docs`
+- **OpenAPI Spec**: `/openapi.yaml`
 
 ## Common Response Format
 
@@ -221,23 +240,31 @@ GET /ingestion/status/{source_id}
 }
 ```
 
-### 3. Translation Service
+### 3. Translation Service (Backend-to-Backend)
 
-#### Translate Single Code
+#### Translate Profession Code
 ```http
 POST /translate
 ```
 
+**Purpose**: Translates profession codes between taxonomies for internal services (EverCheck, DataSolutions, etc.)
+
 **Request Body:**
 ```json
 {
-  "source_taxonomy": "customer_123",
-  "target_taxonomy": "master",
+  "source_taxonomy": "kaiser_permanente",
+  "target_taxonomy": "evercheck_standard",
   "source_code": "RN",
-  "attributes": {
-    "state": "CA",
-    "issuing_authority": "California Board of Nursing"
-  },
+  "attributes": [
+    {
+      "attribute_id": "state",
+      "value": "CA"
+    },
+    {
+      "attribute_id": "issuing_authority",
+      "value": "California Board of Nursing"
+    }
+  ],
   "options": {
     "include_alternatives": true,
     "min_confidence": 70.0
@@ -248,35 +275,56 @@ POST /translate
 **Response:**
 ```json
 {
-  "source_taxonomy": "customer_123",
-  "target_taxonomy": "master",
+  "request_id": "req_123456",
+  "source_taxonomy": "kaiser_permanente",
+  "target_taxonomy": "evercheck_standard",
   "source_code": "RN",
   "source_match": {
     "node_id": 101,
+    "value": "RN",
+    "taxonomy_id": 123,
+    "customer_id": 1,
+    "attributes": {
+      "full_name": "Registered Nurse",
+      "state": "CA"
+    }
+  },
+  "master_taxonomy_match": {
+    "node_id": 1000,
     "value": "Registered Nurse",
-    "taxonomy_name": "Customer 123 Taxonomy"
+    "confidence": 95.0
   },
   "matches": [
     {
-      "target_code": "Registered Nurse - Acute Care",
+      "target_code": "RN-CA",
       "target_node_id": 2001,
       "confidence": 95.2,
       "layer": "gold",
-      "node_type": "Profession"
-    },
-    {
-      "target_code": "Registered Nurse - General",
-      "target_node_id": 2002,
-      "confidence": 87.5,
-      "layer": "silver",
-      "node_type": "Profession",
-      "authority_override": true
+      "node_type": "profession",
+      "attributes": {
+        "state": "CA",
+        "license_type": "Active"
+      },
+      "taxonomy_name": "EverCheck Standard",
+      "full_node_data": {
+        "node_id": 2001,
+        "value": "RN-CA",
+        "type": "profession",
+        "attributes": {
+          "state": "CA",
+          "license_type": "Active",
+          "renewal_period": "2 years"
+        }
+      },
+      "translation_path": {
+        "source_to_master_confidence": 95.0,
+        "master_to_target_confidence": 100.0
+      }
     }
   ],
   "status": "success",
-  "total_matches": 2,
-  "timestamp": "2025-01-26T12:00:00Z",
-  "processing_time_ms": 150
+  "total_matches": 1,
+  "timestamp": "2025-01-26T12:00:00Z"
 }
 ```
 

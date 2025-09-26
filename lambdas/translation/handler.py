@@ -230,17 +230,28 @@ def perform_translation(
         # Step 4: Apply issuing authority overrides
         final_mappings = apply_authority_overrides(session, filtered_mappings, attributes)
 
-        # Step 5: Format response
+        # Step 5: Format response with master taxonomy information
         include_alternatives = options.get('include_alternatives', False)
         min_confidence = options.get('min_confidence', 0.0)
 
         formatted_mappings = format_mappings(final_mappings, include_alternatives, min_confidence)
 
+        # Extract master taxonomy nodes from mappings for transparency
+        master_nodes = []
+        for mapping in final_mappings:
+            if mapping.get('via_master_node_id'):
+                master_nodes.append({
+                    'node_id': mapping.get('via_master_node_id'),
+                    'confidence': mapping.get('source_to_master_confidence', 0)
+                })
+
         return {
+            'request_id': context.request_id if 'context' in locals() else None,
             'source_taxonomy': source_taxonomy,
             'target_taxonomy': target_taxonomy,
             'source_code': source_code,
             'source_match': source_node,
+            'master_taxonomy_match': master_nodes[0] if master_nodes else None,  # Include master node
             'matches': formatted_mappings,
             'status': 'success',
             'total_matches': len(formatted_mappings),
@@ -597,7 +608,7 @@ def format_mappings(
     if not include_alternatives and filtered_mappings:
         filtered_mappings = [filtered_mappings[0]]  # Return only the best match
 
-    # Format each mapping
+    # Format each mapping with complete node information
     formatted = []
     for mapping in filtered_mappings:
         formatted_mapping = {
@@ -605,7 +616,16 @@ def format_mappings(
             'target_node_id': mapping['target_node_id'],
             'confidence': round(mapping['confidence'], 2),
             'layer': mapping.get('layer', 'unknown'),
-            'node_type': mapping.get('target_node_type')
+            'node_type': mapping.get('target_node_type'),
+            # Include all attributes from the node
+            'attributes': mapping.get('attributes', {}),
+            'taxonomy_name': mapping.get('target_taxonomy_name', ''),
+            'full_node_data': {
+                'node_id': mapping['target_node_id'],
+                'value': mapping['target_value'],
+                'type': mapping.get('target_node_type'),
+                'attributes': mapping.get('attributes', {})
+            }
         }
 
         # Add optional fields
@@ -618,6 +638,10 @@ def format_mappings(
         if mapping.get('via_master_node_id'):
             formatted_mapping['via_master'] = True
             formatted_mapping['master_node_id'] = mapping['via_master_node_id']
+            formatted_mapping['translation_path'] = {
+                'source_to_master_confidence': mapping.get('source_to_master_confidence', 0),
+                'master_to_target_confidence': mapping.get('master_to_target_confidence', 0)
+            }
 
         formatted.append(formatted_mapping)
 

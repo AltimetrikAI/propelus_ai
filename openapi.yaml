@@ -1,0 +1,465 @@
+openapi: 3.0.3
+info:
+  title: Propelus AI Taxonomy Translation API
+  description: |
+    Healthcare profession taxonomy translation service for backend-to-backend communication.
+    This API enables translation of profession codes between different customer taxonomies
+    through a master taxonomy layer, ensuring accurate and consistent mappings.
+  version: 1.0.0
+  contact:
+    name: Propelus AI Team
+    email: dmartins@altimetrik.com
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://api.propelus.ai/v1
+    description: Production server
+  - url: https://staging-api.propelus.ai/v1
+    description: Staging server
+  - url: http://localhost:8000/api/v1
+    description: Local development
+
+tags:
+  - name: Translation
+    description: Taxonomy translation endpoints
+  - name: Taxonomy
+    description: Taxonomy management endpoints
+  - name: Admin
+    description: Administrative functions
+
+paths:
+  /translate:
+    post:
+      tags:
+        - Translation
+      summary: Translate profession code between taxonomies
+      description: |
+        Translates a profession code from a source taxonomy to a target taxonomy.
+        This endpoint is designed for backend-to-backend communication between internal
+        Propelus services (e.g., EverCheck, DataSolutions).
+
+        The translation process:
+        1. Identifies the source node in the source taxonomy
+        2. Maps to the master taxonomy
+        3. Finds corresponding nodes in the target taxonomy
+        4. Applies context filters based on attributes (e.g., state)
+        5. Returns matched results with confidence scores
+
+      operationId: translateProfession
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [translate:read]
+
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslationRequest'
+            examples:
+              singleTranslation:
+                summary: Single profession translation
+                value:
+                  source_taxonomy: "kaiser_permanente"
+                  source_code: "RN"
+                  target_taxonomy: "evercheck_standard"
+                  attributes:
+                    - attribute_id: "state"
+                      value: "CA"
+              nationalCertification:
+                summary: National certification translation
+                value:
+                  source_taxonomy: "customer_123"
+                  source_code: "ACLS"
+                  target_taxonomy: "master"
+                  attributes:
+                    - attribute_id: "issuing_authority"
+                      value: "American Heart Association"
+
+      responses:
+        '200':
+          description: Translation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationResponse'
+              examples:
+                singleMatch:
+                  summary: Single match found
+                  value:
+                    request_id: "req_123456"
+                    source_taxonomy: "kaiser_permanente"
+                    target_taxonomy: "evercheck_standard"
+                    source_code: "RN"
+                    source_match:
+                      node_id: 2001
+                      value: "RN"
+                      taxonomy_id: 101
+                      customer_id: 1
+                      attributes:
+                        full_name: "Registered Nurse"
+                        state: "CA"
+                    master_taxonomy_match:
+                      node_id: 1000
+                      value: "Registered Nurse"
+                      confidence: 95.0
+                    matches:
+                      - target_code: "RN-CA"
+                        target_node_id: 3001
+                        confidence: 95.0
+                        layer: "gold"
+                        node_type: "profession"
+                        attributes:
+                          state: "CA"
+                          license_type: "Active"
+                        full_node_data:
+                          node_id: 3001
+                          value: "RN-CA"
+                          type: "profession"
+                          attributes:
+                            state: "CA"
+                            license_type: "Active"
+                    status: "success"
+                    total_matches: 1
+                    timestamp: "2024-09-26T18:30:00Z"
+
+                multipleMatches:
+                  summary: Multiple matches found
+                  value:
+                    request_id: "req_123457"
+                    source_taxonomy: "customer_456"
+                    target_taxonomy: "evercheck_standard"
+                    source_code: "NURSE"
+                    source_match:
+                      node_id: 2002
+                      value: "NURSE"
+                    master_taxonomy_match:
+                      node_id: 1001
+                      value: "Nursing Professional"
+                      confidence: 85.0
+                    matches:
+                      - target_code: "RN"
+                        confidence: 85.0
+                      - target_code: "LPN"
+                        confidence: 80.0
+                      - target_code: "NP"
+                        confidence: 75.0
+                    status: "success"
+                    total_matches: 3
+
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+        '404':
+          description: No translation found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationNotFoundResponse'
+
+        '401':
+          description: Unauthorized
+
+        '500':
+          description: Internal server error
+
+  /taxonomies:
+    get:
+      tags:
+        - Taxonomy
+      summary: List available taxonomies
+      description: Returns a list of taxonomies accessible by the authenticated service
+      security:
+        - ApiKeyAuth: []
+      responses:
+        '200':
+          description: List of taxonomies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taxonomies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/TaxonomySummary'
+
+  /admin/review-queue:
+    get:
+      tags:
+        - Admin
+      summary: Get mappings pending review
+      description: Returns mappings that need human review (confidence < 90%)
+      security:
+        - ApiKeyAuth: []
+        - OAuth2: [admin:read]
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: confidence_max
+          in: query
+          schema:
+            type: number
+            default: 89.0
+      responses:
+        '200':
+          description: Review queue items
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewQueueResponse'
+
+components:
+  schemas:
+    TranslationRequest:
+      type: object
+      required:
+        - source_taxonomy
+        - source_code
+        - target_taxonomy
+      properties:
+        source_taxonomy:
+          type: string
+          description: Identifier for the source taxonomy (e.g., customer ID or name)
+          example: "kaiser_permanente"
+        source_code:
+          type: string
+          description: The profession code to translate
+          example: "RN"
+        target_taxonomy:
+          type: string
+          description: Identifier for the target taxonomy
+          example: "evercheck_standard"
+        attributes:
+          type: array
+          description: Additional attributes to filter results
+          items:
+            type: object
+            required:
+              - attribute_id
+              - value
+            properties:
+              attribute_id:
+                type: string
+                description: Attribute identifier (e.g., 'state', 'license_type')
+              value:
+                type: string
+                description: Attribute value
+        options:
+          type: object
+          properties:
+            include_alternatives:
+              type: boolean
+              default: false
+              description: Include alternative matches
+            min_confidence:
+              type: number
+              default: 0
+              description: Minimum confidence threshold
+
+    TranslationResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+          description: Unique request identifier for tracking
+        source_taxonomy:
+          type: string
+        target_taxonomy:
+          type: string
+        source_code:
+          type: string
+        source_match:
+          $ref: '#/components/schemas/NodeMatch'
+        master_taxonomy_match:
+          $ref: '#/components/schemas/MasterNodeMatch'
+          description: The master taxonomy node used for translation
+        matches:
+          type: array
+          items:
+            $ref: '#/components/schemas/TranslationMatch'
+        status:
+          type: string
+          enum: [success, no_source_match, no_target_match]
+        total_matches:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    NodeMatch:
+      type: object
+      properties:
+        node_id:
+          type: integer
+        value:
+          type: string
+        taxonomy_id:
+          type: integer
+        customer_id:
+          type: integer
+        attributes:
+          type: object
+          additionalProperties: true
+
+    MasterNodeMatch:
+      type: object
+      properties:
+        node_id:
+          type: integer
+        value:
+          type: string
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+
+    TranslationMatch:
+      type: object
+      properties:
+        target_code:
+          type: string
+        target_node_id:
+          type: integer
+        confidence:
+          type: number
+          format: float
+        layer:
+          type: string
+          enum: [bronze, silver, gold]
+        node_type:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        taxonomy_name:
+          type: string
+        full_node_data:
+          type: object
+          properties:
+            node_id:
+              type: integer
+            value:
+              type: string
+            type:
+              type: string
+            attributes:
+              type: object
+        translation_path:
+          type: object
+          properties:
+            source_to_master_confidence:
+              type: number
+            master_to_target_confidence:
+              type: number
+        context_rule:
+          type: string
+          description: Applied context rule name
+        authority_override:
+          type: boolean
+          description: Indicates if issuing authority override was applied
+
+    TranslationNotFoundResponse:
+      type: object
+      properties:
+        request_id:
+          type: string
+        source_taxonomy:
+          type: string
+        target_taxonomy:
+          type: string
+        source_code:
+          type: string
+        status:
+          type: string
+          enum: [no_source_match, no_target_match]
+        message:
+          type: string
+        suggestions:
+          type: array
+          items:
+            type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    TaxonomySummary:
+      type: object
+      properties:
+        taxonomy_id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [master, customer]
+        customer_id:
+          type: integer
+        node_count:
+          type: integer
+        status:
+          type: string
+          enum: [active, inactive]
+
+    ReviewQueueResponse:
+      type: object
+      properties:
+        total:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              mapping_id:
+                type: integer
+              source_node:
+                $ref: '#/components/schemas/NodeMatch'
+              target_node:
+                $ref: '#/components/schemas/NodeMatch'
+              confidence:
+                type: number
+              suggested_by:
+                type: string
+              created_at:
+                type: string
+                format: date-time
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for backend service authentication
+
+    OAuth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: /oauth/token
+          scopes:
+            translate:read: Read translation data
+            admin:read: Read admin data
+            admin:write: Write admin data
+
+security:
+  - ApiKeyAuth: []
