@@ -1,0 +1,158 @@
+# Propelus AI Taxonomy Framework - Git Ignore File
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
+.env.staging
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Testing
+coverage/
+.nyc_output/
+test-results/
+*.lcov
+
+# Documentation
+docs/_build/
+docs/_static/
+docs/_templates/
+site/
+
+# AWS
+.aws/
+*.pem
+*.key
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Docker
+docker-compose.override.yml
+.dockerignore
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.sql.backup
+data/backups/
+
+# Logs
+logs/
+*.log
+*.out
+*.err
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Lambda deployment packages
+lambdas/**/*.zip
+lambdas/**/package/
+
+# Node & TypeScript
+node_modules/
+jspm_packages/
+*.pid
+*.seed
+*.pid.lock
+.npm
+.eslintcache
+.yarn-integrity
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.pnp.*
+dist/
+*.tsbuildinfo
+.turbo/
+
+# Security
+*.pem
+*.key
+*.crt
+*.csr
+secrets/
+credentials/
+*_credentials.json
+*_secret.yaml
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.backup
+*.old
+*.orig
+
+# Archives
+*.tar
+*.tar.gz
+*.zip
+*.gz
+*.tgz
+*.rar
+
+# OS generated
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Project specific
+data/uploads/
+data/exports/
+data/processed/
+cache/
+output/
+results/
+
+# Monitoring
+.monitoring/
+metrics/
+traces/

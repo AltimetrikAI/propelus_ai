@@ -1,0 +1,31 @@
+{
+  "name": "@propelus/silver-processing-lambda",
+  "version": "1.0.0",
+  "description": "Silver layer processing Lambda - data transformation and taxonomy structuring",
+  "main": "dist/handler.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "package": "npm run build && cd dist && zip -r ../silver-processing.zip .",
+    "clean": "rm -rf dist *.zip"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.450.0",
+    "@aws-sdk/client-eventbridge": "^3.450.0",
+    "typeorm": "^0.3.17",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.1.13",
+    "natural": "^6.10.0",
+    "compromise": "^14.10.0",
+    "string-similarity": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.130",
+    "@types/node": "^20.10.0",
+    "@types/natural": "^5.1.5",
+    "typescript": "^5.3.3",
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.11"
+  }
+}

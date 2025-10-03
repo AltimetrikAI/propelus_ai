@@ -1,0 +1,261 @@
+{
+  "Comment": "Propelus Taxonomy Processing Workflow - Bronze → Silver → Mapping → Gold",
+  "StartAt": "BronzeIngestion",
+  "States": {
+    "BronzeIngestion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${BronzeIngestionLambdaArn}",
+        "Payload.$": "$"
+      },
+      "ResultPath": "$.bronzeResult",
+      "Next": "CheckBronzeSuccess",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 2,
+          "MaxAttempts": 3,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "BronzeFailed"
+        }
+      ]
+    },
+    "CheckBronzeSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.bronzeResult.Payload.statusCode",
+          "NumericEquals": 200,
+          "Next": "SilverProcessing"
+        }
+      ],
+      "Default": "BronzeFailed"
+    },
+    "SilverProcessing": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${SilverProcessingLambdaArn}",
+        "Payload": {
+          "load_id.$": "$.bronzeResult.Payload.load_id",
+          "customer_id.$": "$.customer_id",
+          "taxonomy_id.$": "$.taxonomy_id"
+        }
+      },
+      "ResultPath": "$.silverResult",
+      "Next": "CheckSilverSuccess",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "SilverFailed"
+        }
+      ]
+    },
+    "CheckSilverSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.silverResult.Payload.statusCode",
+          "NumericEquals": 200,
+          "Next": "MappingRules"
+        }
+      ],
+      "Default": "SilverFailed"
+    },
+    "MappingRules": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${MappingRulesLambdaArn}",
+        "Payload": {
+          "customer_id.$": "$.customer_id",
+          "taxonomy_id.$": "$.taxonomy_id",
+          "node_ids.$": "$.silverResult.Payload.node_ids"
+        }
+      },
+      "ResultPath": "$.mappingResult",
+      "Next": "CheckMappingSuccess",
+      "Retry": [
+        {
+          "ErrorEquals": ["States.TaskFailed"],
+          "IntervalSeconds": 3,
+          "MaxAttempts": 2,
+          "BackoffRate": 2.0
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MappingFailed"
+        }
+      ]
+    },
+    "CheckMappingSuccess": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.mappingResult.Payload.lowConfidenceCount",
+          "NumericGreaterThan": 0,
+          "Next": "RequiresHumanReview"
+        },
+        {
+          "Variable": "$.mappingResult.Payload.statusCode",
+          "NumericEquals": 200,
+          "Next": "PromoteToGold"
+        }
+      ],
+      "Default": "MappingFailed"
+    },
+    "RequiresHumanReview": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage.waitForTaskToken",
+      "Parameters": {
+        "QueueUrl": "${HumanReviewQueueUrl}",
+        "MessageBody": {
+          "TaskToken.$": "$$.Task.Token",
+          "customer_id.$": "$.customer_id",
+          "taxonomy_id.$": "$.taxonomy_id",
+          "mappingResult.$": "$.mappingResult",
+          "reviewUrl": "${ReviewUIUrl}"
+        }
+      },
+      "ResultPath": "$.reviewResult",
+      "Next": "CheckReviewApproval",
+      "TimeoutSeconds": 86400,
+      "Catch": [
+        {
+          "ErrorEquals": ["States.Timeout"],
+          "ResultPath": "$.error",
+          "Next": "ReviewTimeout"
+        }
+      ]
+    },
+    "CheckReviewApproval": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.reviewResult.approved",
+          "BooleanEquals": true,
+          "Next": "PromoteToGold"
+        }
+      ],
+      "Default": "ReviewRejected"
+    },
+    "PromoteToGold": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "${GoldMappingsTable}",
+        "Item": {
+          "mapping_id": {
+            "S.$": "$.mappingResult.Payload.mapping_id"
+          },
+          "customer_id": {
+            "N.$": "$.customer_id"
+          },
+          "taxonomy_id": {
+            "N.$": "$.taxonomy_id"
+          },
+          "status": {
+            "S": "active"
+          },
+          "promoted_at": {
+            "S.$": "$$.State.EnteredTime"
+          }
+        }
+      },
+      "ResultPath": "$.goldResult",
+      "Next": "SendSuccessNotification"
+    },
+    "SendSuccessNotification": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${SuccessNotificationTopicArn}",
+        "Subject": "Taxonomy Processing Completed",
+        "Message": {
+          "customer_id.$": "$.customer_id",
+          "taxonomy_id.$": "$.taxonomy_id",
+          "status": "success",
+          "timestamp.$": "$$.State.EnteredTime"
+        }
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    },
+    "BronzeFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${ErrorNotificationTopicArn}",
+        "Subject": "Bronze Ingestion Failed",
+        "Message.$": "$.error"
+      },
+      "Next": "Failed"
+    },
+    "SilverFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${ErrorNotificationTopicArn}",
+        "Subject": "Silver Processing Failed",
+        "Message.$": "$.error"
+      },
+      "Next": "Failed"
+    },
+    "MappingFailed": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${ErrorNotificationTopicArn}",
+        "Subject": "Mapping Rules Failed",
+        "Message.$": "$.error"
+      },
+      "Next": "Failed"
+    },
+    "ReviewTimeout": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${ErrorNotificationTopicArn}",
+        "Subject": "Human Review Timeout",
+        "Message": "Human review exceeded 24 hour timeout"
+      },
+      "Next": "Failed"
+    },
+    "ReviewRejected": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "${ErrorNotificationTopicArn}",
+        "Subject": "Mapping Review Rejected",
+        "Message": "Human reviewer rejected the mapping"
+      },
+      "Next": "Failed"
+    },
+    "Failed": {
+      "Type": "Fail",
+      "Error": "WorkflowFailed",
+      "Cause": "Taxonomy processing workflow failed"
+    }
+  }
+}

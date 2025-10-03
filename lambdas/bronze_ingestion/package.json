@@ -1,0 +1,27 @@
+{
+  "name": "@propelus/lambda-bronze-ingestion",
+  "version": "1.0.0",
+  "description": "Bronze Layer Ingestion Lambda - TypeScript",
+  "main": "dist/handler.js",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist",
+    "package": "npm run build && cd dist && zip -r ../function.zip .",
+    "deploy": "npm run package && aws lambda update-function-code --function-name bronze-ingestion --zip-file fileb://function.zip"
+  },
+  "dependencies": {
+    "@propelus/shared": "file:../../shared",
+    "@aws-sdk/client-s3": "^3.490.0",
+    "@aws-sdk/client-sqs": "^3.490.0",
+    "csv-parse": "^5.5.3",
+    "pg": "^8.11.3",
+    "typeorm": "^0.3.19",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.131",
+    "@types/node": "^20.10.6",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3"
+  }
+}

@@ -1,0 +1,401 @@
+openapi: 3.0.3
+info:
+  title: Propelus Taxonomy API
+  description: Healthcare profession taxonomy normalization and translation API
+  version: 1.0.0
+  contact:
+    name: Propelus AI Team
+    email: support@propelus.ai
+
+servers:
+  - url: https://api.propelus.ai/v1
+    description: Production
+  - url: https://api-staging.propelus.ai/v1
+    description: Staging
+  - url: http://localhost:8000/v1
+    description: Local development
+
+tags:
+  - name: Ingestion
+    description: Data ingestion endpoints
+  - name: Translation
+    description: Taxonomy translation endpoints
+  - name: Taxonomies
+    description: Taxonomy management endpoints
+  - name: Mappings
+    description: Mapping management endpoints
+
+paths:
+  /ingest:
+    post:
+      tags:
+        - Ingestion
+      summary: Ingest taxonomy data
+      description: Upload taxonomy data for processing (CSV, JSON, Excel)
+      operationId: ingestData
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File containing taxonomy data
+                customer_id:
+                  type: integer
+                  description: Customer identifier
+                taxonomy_id:
+                  type: integer
+                  description: Taxonomy identifier
+                type:
+                  type: string
+                  enum: [new, updated]
+                  description: Data type
+      responses:
+        '200':
+          description: Ingestion initiated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IngestionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /translate:
+    post:
+      tags:
+        - Translation
+      summary: Translate profession code
+      description: Translate a profession code from one taxonomy to another
+      operationId: translateCode
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TranslationRequest'
+      responses:
+        '200':
+          description: Translation successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TranslationResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /taxonomies:
+    get:
+      tags:
+        - Taxonomies
+      summary: List taxonomies
+      description: Get list of available taxonomies
+      operationId: listTaxonomies
+      parameters:
+        - name: customer_id
+          in: query
+          schema:
+            type: integer
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [master, customer]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, inactive]
+      responses:
+        '200':
+          description: List of taxonomies
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  taxonomies:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Taxonomy'
+
+  /taxonomies/{taxonomy_id}:
+    get:
+      tags:
+        - Taxonomies
+      summary: Get taxonomy details
+      operationId: getTaxonomy
+      parameters:
+        - name: taxonomy_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Taxonomy details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaxonomyDetail'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /mappings:
+    get:
+      tags:
+        - Mappings
+      summary: Query mappings
+      description: Get mappings between taxonomies
+      operationId: getMappings
+      parameters:
+        - name: customer_id
+          in: query
+          schema:
+            type: integer
+        - name: taxonomy_id
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [active, pending_review, inactive]
+        - name: min_confidence
+          in: query
+          schema:
+            type: number
+            format: float
+            minimum: 0
+            maximum: 1
+      responses:
+        '200':
+          description: List of mappings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mappings:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Mapping'
+
+  /verify:
+    post:
+      tags:
+        - Mappings
+      summary: Human verification
+      description: Submit human verification for low-confidence mappings
+      operationId: verifyMapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerificationRequest'
+      responses:
+        '200':
+          description: Verification accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  mapping_id:
+                    type: integer
+
+components:
+  schemas:
+    IngestionResponse:
+      type: object
+      properties:
+        load_id:
+          type: integer
+        status:
+          type: string
+        message:
+          type: string
+        records_count:
+          type: integer
+
+    TranslationRequest:
+      type: object
+      required:
+        - source_taxonomy
+        - target_taxonomy
+        - source_code
+      properties:
+        source_taxonomy:
+          type: string
+          description: Source taxonomy identifier
+        target_taxonomy:
+          type: string
+          description: Target taxonomy identifier
+        source_code:
+          type: string
+          description: Code to translate
+        attributes:
+          type: object
+          description: Additional attributes (state, license type, etc.)
+
+    TranslationResponse:
+      type: object
+      properties:
+        source:
+          type: object
+          properties:
+            taxonomy:
+              type: string
+            code:
+              type: string
+            attributes:
+              type: object
+        target:
+          type: object
+          properties:
+            taxonomy:
+              type: string
+            codes:
+              type: array
+              items:
+                type: string
+            nodes:
+              type: array
+              items:
+                type: object
+                properties:
+                  nodeId:
+                    type: integer
+                  value:
+                    type: string
+                  level:
+                    type: integer
+                  confidence:
+                    type: number
+        mappingMethod:
+          type: string
+          enum: [existing, ai_translation, not_found]
+        confidence:
+          type: number
+          format: float
+        ambiguous:
+          type: boolean
+        cached:
+          type: boolean
+
+    Taxonomy:
+      type: object
+      properties:
+        taxonomy_id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [master, customer]
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        taxonomy_version:
+          type: integer
+
+    TaxonomyDetail:
+      allOf:
+        - $ref: '#/components/schemas/Taxonomy'
+        - type: object
+          properties:
+            nodes_count:
+              type: integer
+            levels:
+              type: integer
+
+    Mapping:
+      type: object
+      properties:
+        mapping_id:
+          type: integer
+        master_node_id:
+          type: integer
+        child_node_id:
+          type: integer
+        confidence:
+          type: number
+          format: float
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    VerificationRequest:
+      type: object
+      required:
+        - mapping_id
+        - approved
+        - user
+      properties:
+        mapping_id:
+          type: integer
+        approved:
+          type: boolean
+        user:
+          type: string
+        notes:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+security:
+  - ApiKeyAuth: []

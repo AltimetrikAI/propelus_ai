@@ -1,0 +1,20 @@
+{
+  "name": "@propelus/shared",
+  "version": "1.0.0",
+  "description": "Shared TypeScript code for Propelus AI Taxonomy",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "typeorm": "^0.3.19",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.2.1"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.3.3"
+  }
+}

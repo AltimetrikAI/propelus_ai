@@ -1,0 +1,197 @@
+version: '3.8'
+
+services:
+  # Database Services
+  postgres:
+    image: postgres:15-alpine
+    container_name: propelus_postgres
+    environment:
+      POSTGRES_DB: propelus_taxonomy
+      POSTGRES_USER: propelus_admin
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./data/migrations:/docker-entrypoint-initdb.d:ro
+      - ./data/seeds:/seeds:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U propelus_admin -d propelus_taxonomy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - propelus_network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: propelus_redis
+    command: redis-server --appendonly yes --requirepass dev_redis_password
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - propelus_network
+    restart: unless-stopped
+
+  # Taxonomy API Service (TypeScript/NestJS)
+  taxonomy-api:
+    build:
+      context: ./services/taxonomy-api
+      dockerfile: Dockerfile
+    container_name: taxonomy-api
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: propelus_taxonomy
+      DB_USER: propelus_admin
+      DB_PASSWORD: dev_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: dev_redis_password
+      LOG_LEVEL: debug
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./services/taxonomy-api:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - propelus_network
+    profiles:
+      - full
+
+  # Translation Service (TypeScript/NestJS)
+  translation-service:
+    build:
+      context: ./services/translation-service
+      dockerfile: Dockerfile
+    container_name: translation-service
+    environment:
+      NODE_ENV: development
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: propelus_taxonomy
+      DB_USER: propelus_admin
+      DB_PASSWORD: dev_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: dev_redis_password
+      TAXONOMY_API_URL: http://taxonomy-api:8000
+      AWS_REGION: us-east-1
+      LOG_LEVEL: debug
+    ports:
+      - "8001:8001"
+    depends_on:
+      - taxonomy-api
+      - redis
+    volumes:
+      - ./services/translation-service:/app
+      - /app/node_modules
+    command: npm run dev
+    networks:
+      - propelus_network
+    profiles:
+      - full
+
+  # Admin UI (Next.js/React)
+  admin-ui:
+    build:
+      context: ./services/admin-ui
+      dockerfile: Dockerfile
+    container_name: admin-ui
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+      NEXT_PUBLIC_TRANSLATION_API_URL: http://localhost:8001/api/v1
+    ports:
+      - "3000:3000"
+    depends_on:
+      - taxonomy-api
+      - translation-service
+    volumes:
+      - ./services/admin-ui:/app
+      - /app/node_modules
+      - /app/.next
+    command: npm run dev
+    networks:
+      - propelus_network
+    profiles:
+      - full
+
+  # pgAdmin for database management (optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: propelus_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@propelus.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - propelus_network
+    profiles:
+      - tools
+
+  # Redis Commander for cache management (optional)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: propelus_redis_commander
+    environment:
+      REDIS_HOSTS: redis:redis:6379:0:dev_redis_password
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    networks:
+      - propelus_network
+    profiles:
+      - tools
+
+  # LocalStack for AWS services emulation (optional)
+  localstack:
+    image: localstack/localstack:latest
+    container_name: propelus_localstack
+    ports:
+      - "4566:4566"
+      - "4571:4571"
+    environment:
+      SERVICES: s3,sqs,secretsmanager,lambda
+      DEBUG: 1
+      DATA_DIR: /tmp/localstack/data
+      LAMBDA_EXECUTOR: local
+      HOST_TMP_FOLDER: ${TMPDIR:-/tmp/}localstack
+      DOCKER_HOST: unix:///var/run/docker.sock
+    volumes:
+      - "${TMPDIR:-/tmp}/localstack:/tmp/localstack"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    networks:
+      - propelus_network
+    profiles:
+      - local-aws
+
+networks:
+  propelus_network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
