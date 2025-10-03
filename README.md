@@ -10,24 +10,26 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 
 ## 📊 Project Status
 
-**Current Progress: ~85% Complete** ✅
+**Current Progress: ~90% Complete** ✅
 
 ### ✅ Completed Components
 - ✅ TypeScript project structure with npm workspaces
 - ✅ Database models (TypeORM) - 35+ entities
-- ✅ Bronze Ingestion Lambda (S3 + API Gateway)
-- ✅ Silver Processing Lambda (NLP + taxonomy structuring)
+- ✅ **Combined Ingestion & Cleansing Lambda v2.0** (Bronze → Silver in single transaction)
 - ✅ Mapping Rules Lambda (exact, fuzzy, AI semantic matching)
 - ✅ Translation Lambda (real-time translation with AI + caching)
 - ✅ Step Functions orchestration workflow
 - ✅ OpenAPI 3.0 specification
 - ✅ Master Taxonomy research documentation
 - ✅ Shared utilities and types
+- ✅ Comprehensive test data generation and validation tools
+- ✅ Log retention strategy documentation
 
 ### 🚧 In Progress / Pending
+- ⏳ Database migrations (awaiting physical data model)
 - ⏳ NestJS Taxonomy API Service
 - ⏳ Next.js Admin UI
-- ⏳ Unit and integration tests
+- ⏳ Integration tests
 - ⏳ Pulumi Infrastructure as Code
 - ⏳ Master taxonomy population
 
@@ -50,22 +52,23 @@ Propelus_AI/
 │   └── utils/                          # Common utilities (logger, etc.)
 │
 ├── lambdas/                             # AWS Lambda functions
-│   ├── bronze_ingestion/               # ✅ File parsing & ingestion
+│   ├── ingestion_and_cleansing/        # ✅ v2.0 - Combined Bronze→Silver
 │   │   ├── src/
-│   │   │   ├── handler.ts
-│   │   │   ├── processors/
-│   │   │   └── utils/
-│   │   └── package.json
-│   │
-│   ├── silver_processing/              # ✅ NLP & taxonomy structuring
-│   │   ├── src/
-│   │   │   ├── handler.ts
-│   │   │   ├── processors/
-│   │   │   │   └── silver-processor.ts
-│   │   │   └── services/
-│   │   │       ├── nlp-service.ts      # Natural language processing
-│   │   │       └── taxonomy-structurer.ts
-│   │   └── package.json
+│   │   │   ├── handler.ts              # Main entry point
+│   │   │   ├── types/                  # TypeScript type definitions
+│   │   │   ├── utils/                  # Normalization, streams, constants
+│   │   │   ├── parsers/                # Excel, API, layout, filename parsers
+│   │   │   ├── database/               # SQL query modules
+│   │   │   │   └── queries/            # Load, bronze, silver, versioning
+│   │   │   └── processors/             # S3, API, row, orchestrator
+│   │   ├── test/                       # Test data generation & validation
+│   │   │   ├── sample-data-generator.ts
+│   │   │   ├── validate-test-data.ts
+│   │   │   ├── local-test-runner.ts
+│   │   │   └── README.md
+│   │   ├── package.json
+│   │   ├── tsconfig.json
+│   │   └── README.md
 │   │
 │   ├── mapping_rules/                  # ✅ Multi-strategy matching
 │   │   ├── src/
@@ -173,52 +176,55 @@ npm run package
 
 ## 📚 Lambda Functions
 
-### 1. Bronze Ingestion Lambda
+### 1. Ingestion & Cleansing Lambda v2.0 (Combined)
 
-**Purpose**: Ingests raw data from CSV, JSON, Excel files
+**Purpose**: Atomic Bronze → Silver transformation in single transaction
 
 **Triggers**:
-- S3 file upload events
-- API Gateway POST requests
+- S3 file upload events (Excel)
+- API Gateway POST requests (JSON payload)
 
 **Features**:
-- Multi-format parsing (CSV, JSON, Excel)
-- Data validation
-- SQS message publishing
-- Error handling and retry logic
+- **Bronze Layer Processing** (§1-5):
+  - Multi-format parsing (Excel, API JSON)
+  - Layout detection (master vs customer)
+  - Load tracking with request_id
+- **Dictionary Management** (§6):
+  - Append-only node types
+  - Append-only attribute types
+- **Silver Transformation** (§7):
+  - Hierarchical node creation
+  - Parent-child relationships
+  - Multi-value attributes
+- **Two Processing Paths**:
+  - **NEW Load**: Insert-only, creates Version 1
+  - **UPDATED Load**: Upsert + soft-delete reconciliation, creates Version N
+- **Versioning** (§7A.3, §7B.5):
+  - Track taxonomy evolution
+  - Affected nodes/attributes JSON
+  - Version history with date ranges
+- **Complete Audit Trail**:
+  - Row-level lineage (load_id, row_id)
+  - Status tracking (completed/failed)
+  - Error details in load_details JSON
 
 **Tech**:
-- TypeScript
-- AWS SDK v3
-- xlsx, csv-parse libraries
+- TypeScript with embedded SQL
+- PostgreSQL natural key constraints
+- xlsx parser
+- AWS SDK v3 (S3)
+- pg (PostgreSQL driver)
+
+**Test Tools**:
+```bash
+npm run test:generate  # Generate sample taxonomies
+npm run test:validate  # Validate test data
+npm run test:local     # Run Lambda locally
+```
 
 ---
 
-### 2. Silver Processing Lambda
-
-**Purpose**: Transforms Bronze data into structured Silver taxonomies
-
-**Triggers**: SQS messages from Bronze Ingestion
-
-**Features**:
-- **NLP Service**:
-  - Profession name extraction and normalization
-  - Attribute extraction (state, license, etc.)
-  - State code mapping (all 50 US states)
-  - Text tokenization and stemming
-- **Taxonomy Structurer**:
-  - 5-level hierarchy creation (Industry → Group → Occupation → Specialty → Profession)
-  - Automatic group/occupation inference
-  - Node attribute management
-
-**Tech**:
-- Natural (NLP library)
-- Compromise (text analysis)
-- TypeORM
-
----
-
-### 3. Mapping Rules Lambda
+### 2. Mapping Rules Lambda
 
 **Purpose**: Maps customer taxonomies to master taxonomy using multiple strategies
 
@@ -241,7 +247,7 @@ npm run package
 
 ---
 
-### 4. Translation Lambda
+### 3. Translation Lambda
 
 **Purpose**: Real-time taxonomy translation via API
 
@@ -280,9 +286,8 @@ npm run package
 
 **Flow**:
 ```
-Bronze Ingestion
-    ↓
-Silver Processing
+Ingestion & Cleansing (v2.0)
+[Atomic: Bronze → Silver + Versioning]
     ↓
 Mapping Rules
     ↓
@@ -544,11 +549,14 @@ EVENT_BUS_NAME=taxonomy-events
 ## 📊 Key Metrics
 
 - **35+ TypeORM entities** (Bronze, Silver, Gold, Audit layers)
-- **4 Lambda functions** (fully implemented in TypeScript)
-- **3 matching strategies** (exact, fuzzy, AI semantic)
-- **5-level taxonomy hierarchy**
-- **50+ US state mappings** in NLP service
-- **100% TypeScript** (no Python code)
+- **3 Lambda functions** (fully implemented in TypeScript)
+  - Combined Ingestion & Cleansing v2.0 (26 TypeScript modules)
+  - Mapping Rules with 3 strategies (exact, fuzzy, AI semantic)
+  - Real-time Translation with caching
+- **Comprehensive test suite** (sample data generation, validation, local testing)
+- **26 TypeScript modules** in Ingestion & Cleansing Lambda
+- **Multi-level taxonomy hierarchy** support (master: up to 6 levels, customer: flat)
+- **100% TypeScript** (SQL-centric architecture)
 
 ---
 
@@ -593,6 +601,7 @@ Copyright © 2025 Propelus AI
 
 ---
 
-**Last Updated**: October 2, 2025
-**Version**: 1.0.0
-**Status**: Production-Ready (85% complete)
+**Last Updated**: October 3, 2025
+**Version**: 2.0.0
+**Status**: Production-Ready (90% complete)
+**Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect

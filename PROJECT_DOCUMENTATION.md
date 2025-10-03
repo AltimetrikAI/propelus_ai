@@ -3,7 +3,8 @@
 ## Executive Summary
 The Propelus Taxonomy Framework is an AI-powered system for standardizing healthcare profession data by mapping customer profession lists directly to a single master taxonomy. It uses a three-layer data architecture (Bronze, Silver, Gold) with Lambda functions for processing, applying both deterministic rules and AI/LLM capabilities.
 
-**Last Updated**: September 29, 2025 - Post Architecture Simplification
+**Last Updated**: October 3, 2025 - Combined Ingestion & Cleansing Lambda v2.0
+**Author**: Douglas Martins, Senior AI Engineer/Architect
 
 ## 🎯 Simplified Architecture Model (September 2025)
 
@@ -61,6 +62,96 @@ Query: "RN + CA" → Lookup in Gold mappings → Return master taxonomy match(es
 Master taxonomy updated → Version increment → Reprocess stored professions →
 Generate new mapping versions → Review changes → Promote to Gold
 ```
+
+---
+
+## Master Taxonomy Attributes (October 2024 Update)
+
+### Purpose
+Master taxonomy nodes **SHOULD have attributes** to provide additional context for:
+1. **LLM Matching**: Enhanced semantic understanding during customer→master mapping
+2. **Business Rules**: Validation and filtering based on profession characteristics
+3. **Reporting & Analytics**: Additional dimensions for analysis
+
+### Attribute Categories
+
+#### Level Attributes (Professional Standing)
+Describes the credential or qualification level of a profession:
+- **Licensed**: State-issued professional license
+- **Certified**: National/organizational certification
+- **Registered**: Registration with professional body
+- **Supervisor**: Supervisory or advanced practice designation
+- **Advanced Practice**: Higher level of autonomous practice
+
+#### Status Attributes (Practice Status)
+Describes the employment or practice status:
+- **Temporary**: Time-limited credential or role
+- **Volunteer**: Unpaid/volunteer capacity
+- **Provisional**: Conditional or probationary status
+- **Inactive**: Not currently practicing
+- **Active**: Currently authorized to practice
+
+### Example Master Taxonomy with Attributes
+
+```
+Industry (node) | Group (node) | Occupation (node) | Level (attribute) | Status (attribute)
+Healthcare      | Medical      | Physician         | Licensed          | Active
+Healthcare      | Medical      | Medical Assistant | Certified         | Active
+Healthcare      | Nursing      | RN               | Licensed          | Active
+Healthcare      | Nursing      | LPN              | Licensed          | Active
+Healthcare      | Nursing      | RN               | Licensed          | Temporary
+Healthcare      | Social Work  | LCSW             | Licensed          | Active
+Healthcare      | Social Work  | LSW              | Licensed          | Provisional
+```
+
+### Benefits for LLM Processing
+
+**Without Attributes**:
+```
+Customer Input: "Temporary Licensed Social Worker"
+Master Match: "Social Worker" (generic, may miss temporal nature)
+```
+
+**With Attributes**:
+```
+Customer Input: "Temporary Licensed Social Worker"
+Master Match: "Social Worker" + Level: "Licensed" + Status: "Temporary"
+LLM Context: Full understanding of both credential level and temporal status
+```
+
+### Implementation in Data Model
+
+**Already Supported** - The current algorithm (v0.2) and data model fully support master taxonomy attributes:
+
+```sql
+-- Master taxonomy nodes can have multiple attributes
+silver_taxonomies_nodes (node hierarchy)
+  ↓
+silver_taxonomies_nodes_attributes (multi-value attributes)
+  - attribute_type_id → "Level", "Status", "Specialty", etc.
+  - value → "Licensed", "Temporary", "ICU", etc.
+```
+
+**Excel Format**:
+```
+Occupation (node) | Level (attribute) | Status (attribute)
+Physician         | Licensed          | Active
+```
+
+**API Format**:
+```json
+{
+  "layout": {
+    "Nodes": ["Industry", "Group", "Occupation"],
+    "Attributes": ["Level", "Status", "Specialty"]
+  }
+}
+```
+
+### Next Steps
+- Kristen to populate master taxonomy with Level/Status attributes
+- Identify additional attribute types from profession keyword analysis
+- Test LLM matching improvement with enriched attributes
 
 ---
 
