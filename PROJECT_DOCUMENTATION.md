@@ -1,31 +1,37 @@
 # Propelus Healthcare Taxonomy Project Documentation
 
 ## Executive Summary
-The Propelus Taxonomy Framework is an AI-powered system for standardizing healthcare profession data by mapping customer profession lists directly to a single master taxonomy. It uses a three-layer data architecture (Bronze, Silver, Gold) with Lambda functions for processing, applying both deterministic rules and AI/LLM capabilities.
+The Propelus Taxonomy Framework is an AI-powered system for standardizing healthcare profession data by mapping customer profession lists (flat or hierarchical) directly to a single master taxonomy. It uses a three-layer data architecture (Bronze, Silver, Gold) with Lambda functions for processing, applying both deterministic rules and AI/LLM capabilities. The system handles variable-depth hierarchies using N/A placeholder nodes for automatic gap filling.
 
-**Last Updated**: October 3, 2025 - Combined Ingestion & Cleansing Lambda v2.0
+**Last Updated**: October 9, 2024 - N/A Node System Integrated (v2.1.0)
 **Author**: Douglas Martins, Senior AI Engineer/Architect
 
 ## 🎯 Simplified Architecture Model (September 2025)
 
 ### Key Architectural Decisions
-After extensive meetings and customer data analysis, the architecture has been **significantly simplified**:
+After extensive meetings and customer data analysis:
 
-**What Changed:**
-- ❌ **NO customer taxonomies** - customers provide flat profession lists only
+**Architecture:**
 - ✅ **ONE master taxonomy** maintained by Propelus (immutable, ~4 updates/year)
+- ✅ **Variable customer taxonomies** - supports both flat lists and hierarchical structures
+- ✅ **N/A Node System (Martin's Approach)** - automatic gap filling for variable-depth hierarchies
 - ✅ **Direct mapping**: Customer professions → Master taxonomy (no intermediate layers)
 - ✅ **Request-based**: All interactions tracked with request_id for async operations
 - ✅ **Remapping support**: Historical mappings reprocessed when master taxonomy updates
 
-**Customer Data Reality:**
-Customers typically provide simple lists with 3-4 fields:
+**Customer Data Variability:**
+Customers provide data in various formats:
+
+**Flat Lists** (most common):
 - Profession code (e.g., "RN", "ARNP", "LPN")
 - Profession description (e.g., "Registered Nurse")
 - State code (e.g., "CA", "WA", "FL")
 - Optional: Issuing authority, license type, specialty
 
-**No hierarchical taxonomies from customers!**
+**Hierarchical Taxonomies** (variable depth):
+- Example: `Social Worker → [skip level 2] → Associate`
+- N/A placeholder nodes automatically fill hierarchy gaps
+- Enables consistent mapping regardless of taxonomy depth
 
 ## System Architecture Overview
 
@@ -152,6 +158,116 @@ Physician         | Licensed          | Active
 - Kristen to populate master taxonomy with Level/Status attributes
 - Identify additional attribute types from profession keyword analysis
 - Test LLM matching improvement with enriched attributes
+
+---
+
+## N/A Node System: Variable-Depth Hierarchy Handling
+
+### Problem Statement
+Healthcare taxonomies have inconsistent depths:
+- **Master Taxonomy**: 5 levels (`Healthcare → Medical → Physicians → Family Medicine → FP-CA`)
+- **Customer A**: 2 levels (`Social Worker → Associate`) - skips intermediate levels
+- **Customer B**: Flat list (no hierarchy)
+
+### Solution: N/A Placeholder Nodes (Martin's Approach - Oct 8, 2024)
+
+**Core Concept**: When taxonomies skip hierarchy levels, automatically insert N/A placeholder nodes (node_type_id = -1) to maintain structural consistency.
+
+**Example**:
+```
+Input CSV:
+  Level 1: Social Worker
+  Level 2: [empty]
+  Level 3: Associate
+
+Stored in Database:
+  Level 1: Social Worker (real node)
+  Level 2: N/A (placeholder, node_type_id = -1)
+  Level 3: Associate (real node)
+```
+
+### Implementation Components
+
+**Database Layer**:
+- **Migration 001**: N/A node type with reserved ID (-1)
+- **Migration 002**: 7 SQL helper functions
+  - `get_node_full_path()` - includes N/A for LLM context
+  - `get_node_display_path()` - excludes N/A for UI
+  - `get_active_children()` - excludes N/A from navigation
+  - Plus: `is_na_node()`, `count_na_nodes_in_path()`, `get_node_ancestors()`, `get_node_path_with_levels()`
+
+**TypeScript Classes**:
+- **NANodeHandler**: Creates/manages N/A placeholder nodes
+  - `getOrCreateParentNode()` - automatic gap filling
+  - `findOrCreateNANode()` - idempotent N/A creation
+  - `createNAChain()` - fills multiple consecutive gaps
+- **HierarchyQueries**: N/A-aware query wrappers
+  - `getFullPath()` - includes N/A for LLM
+  - `getDisplayPath()` - filters N/A for display
+  - `formatPathForLLM()` - adds `[SKIP]` markers
+
+### Lambda Integration
+
+**Ingestion Lambda**:
+```typescript
+// Automatically creates N/A nodes when CSV has gaps
+const naHandler = new NANodeHandler(pool);
+const parentId = await naHandler.getOrCreateParentNode(
+  taxonomyId, targetLevel, semanticParentId, semanticParentLevel
+);
+```
+
+**Mapping Lambda**:
+```typescript
+// Include hierarchy in AI prompts
+const fullPath = await hierarchyQueries.getFullPath(nodeId);
+const llmPrompt = hierarchyQueries.formatPathForLLM(fullPath);
+// Result: "L1:Healthcare → [SKIP]:N/A → L3:Nurse"
+
+// Filter N/A from matching candidates
+WHERE node_type_id != -1
+```
+
+**Translation Lambda**:
+```typescript
+// Return N/A-filtered display paths
+const displayPath = await hierarchyQueries.getDisplayPath(nodeId);
+// Result: "Healthcare → Nurse" (N/A removed)
+```
+
+### Dual Display Strategy
+
+**For LLMs (include N/A with markers)**:
+- Purpose: Provide structural context for semantic understanding
+- Format: `L1:Healthcare → [SKIP]:N/A → L3:Nurse`
+- Usage: AI matching prompts, semantic analysis
+
+**For Users (exclude N/A completely)**:
+- Purpose: Clean, professional display
+- Format: `Healthcare → Nurse`
+- Usage: API responses, UI, reports
+
+### Key Benefits
+✅ **Consistent Structure**: All hierarchies have complete parent-child chains
+✅ **Idempotent**: Reuses existing N/A nodes, prevents duplicates
+✅ **Performance**: Dedicated indexes for N/A filtering (`idx_nodes_exclude_na`)
+✅ **Clean Display**: Users never see placeholder nodes
+✅ **Better AI Matching**: LLM understands hierarchy structure
+
+### Testing
+```bash
+# Verify installation
+npm run test:na-nodes
+
+# Check for N/A pollution (should return 0)
+SELECT COUNT(*) FROM silver_taxonomies_nodes
+WHERE node_type_id = -1 AND value LIKE '%N/A%';
+```
+
+**Documentation**:
+- [Implementation Summary](./docs/NA_NODE_IMPLEMENTATION_SUMMARY.md)
+- [Integration Examples](./docs/INTEGRATION_EXAMPLES.md)
+- [Migration Guide](./scripts/migrations/README.md)
 
 ---
 

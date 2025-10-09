@@ -10,14 +10,16 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 
 ## 📊 Project Status
 
-**Current Progress: ~90% Complete** ✅
+**Current Progress: ~95% Complete** ✅
 
 ### ✅ Completed Components
 - ✅ TypeScript project structure with npm workspaces
 - ✅ Database models (TypeORM) - 35+ entities
-- ✅ **Combined Ingestion & Cleansing Lambda v2.0** (Bronze → Silver in single transaction)
-- ✅ Mapping Rules Lambda (exact, fuzzy, AI semantic matching)
-- ✅ Translation Lambda (real-time translation with AI + caching)
+- ✅ **N/A Node System** - Hierarchical gap handling with placeholder nodes
+- ✅ **Database Migrations** - Automated migration runner with N/A node support
+- ✅ **Combined Ingestion & Cleansing Lambda v2.0** (Bronze → Silver with N/A gap filling)
+- ✅ Mapping Rules Lambda (exact, fuzzy, AI semantic matching with hierarchy context)
+- ✅ Translation Lambda (real-time translation with N/A-filtered display paths)
 - ✅ Step Functions orchestration workflow
 - ✅ OpenAPI 3.0 specification
 - ✅ Master Taxonomy research documentation
@@ -26,7 +28,6 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 - ✅ Log retention strategy documentation
 
 ### 🚧 In Progress / Pending
-- ⏳ Database migrations (awaiting physical data model)
 - ⏳ NestJS Taxonomy API Service
 - ⏳ Next.js Admin UI
 - ⏳ Integration tests
@@ -138,6 +139,12 @@ cp .env.example .env
 # Start PostgreSQL and Redis (Docker)
 docker-compose up -d postgres redis
 
+# Run database migrations (REQUIRED for N/A node support)
+npm run migrate
+
+# Verify N/A node installation
+npm run test:na-nodes
+
 # Build all packages
 npm run build
 ```
@@ -150,6 +157,15 @@ npm run build
 
 # Run tests
 npm test
+
+# Test N/A node implementation
+npm run test:na-nodes
+
+# Check migration status
+npm run migrate:status
+
+# Run pending migrations
+npm run migrate
 
 # Lint code
 npm run lint
@@ -174,11 +190,97 @@ npm run package
 
 ---
 
+## 🔗 N/A Node System (Martin's Approach)
+
+**Purpose**: Handle variable-depth taxonomy hierarchies with automatic gap filling
+
+### The Problem
+
+Healthcare professions have inconsistent hierarchy depths across taxonomies:
+- **Master Taxonomy**: `Healthcare → Medical → Physicians → Family Medicine → Family Medicine Physician - CA` (5 levels)
+- **Customer Taxonomy**: `Social Worker → Associate` (skips intermediate levels)
+
+### The Solution
+
+**N/A Placeholder Nodes** (node_type_id = -1) automatically fill hierarchy gaps:
+
+```
+Input CSV:
+Level 1: Social Worker
+Level 2: [empty]
+Level 3: Associate
+
+Stored Hierarchy:
+Level 1: Social Worker
+Level 2: N/A [placeholder]
+Level 3: Associate
+```
+
+### Key Features
+
+✅ **Automatic Gap Filling**: NANodeHandler creates N/A nodes when levels are skipped
+✅ **Idempotent Operations**: Reuses existing N/A nodes, prevents duplicates
+✅ **Dual Display Modes**:
+  - **User Display**: Filters N/A (`Healthcare → Nurse`)
+  - **LLM Context**: Includes N/A with `[SKIP]` markers for structural understanding
+
+✅ **Performance Optimized**: Dedicated indexes for N/A filtering queries
+
+### Implementation
+
+```typescript
+// Ingestion: Automatic gap filling
+const naHandler = new NANodeHandler(pool);
+const parentId = await naHandler.getOrCreateParentNode(
+  taxonomyId, targetLevel, semanticParentId, semanticParentLevel
+);
+
+// Mapping: Include hierarchy in AI prompts
+const hierarchyQueries = new HierarchyQueries(pool);
+const fullPath = await hierarchyQueries.getFullPath(nodeId);
+const llmPrompt = hierarchyQueries.formatPathForLLM(fullPath);
+// Result: "L1:Healthcare → [SKIP]:N/A → L3:Nurse"
+
+// Translation: N/A-filtered display paths
+const displayPath = await hierarchyQueries.getDisplayPath(nodeId);
+// Result: "Healthcare → Nurse" (N/A removed)
+```
+
+### Database Components
+
+- **Migration 001**: N/A node type (ID: -1) with performance indexes
+- **Migration 002**: 7 SQL helper functions for hierarchy operations
+  - `get_node_full_path()` - includes N/A for LLM context
+  - `get_node_display_path()` - excludes N/A for UI
+  - `get_active_children()` - excludes N/A from navigation
+  - `is_na_node()`, `count_na_nodes_in_path()`, and more
+
+### Usage in All Lambda Functions
+
+**Ingestion Lambda**: Automatically creates N/A nodes when CSV has hierarchy gaps
+**Mapping Lambda**: Filters N/A from candidates, includes in AI prompts for context
+**Translation Lambda**: Returns N/A-filtered display paths in API responses
+
+### Testing
+
+```bash
+# Verify N/A node installation
+npm run test:na-nodes
+
+# Check for N/A pollution in results (should be 0)
+SELECT COUNT(*) FROM silver_taxonomies_nodes
+WHERE node_type_id = -1 AND value LIKE '%N/A%';
+```
+
+**Documentation**: See `docs/NA_NODE_IMPLEMENTATION_SUMMARY.md` and `docs/INTEGRATION_EXAMPLES.md`
+
+---
+
 ## 📚 Lambda Functions
 
 ### 1. Ingestion & Cleansing Lambda v2.0 (Combined)
 
-**Purpose**: Atomic Bronze → Silver transformation in single transaction
+**Purpose**: Atomic Bronze → Silver transformation in single transaction with N/A gap filling
 
 **Triggers**:
 - S3 file upload events (Excel)
@@ -193,7 +295,8 @@ npm run package
   - Append-only node types
   - Append-only attribute types
 - **Silver Transformation** (§7):
-  - Hierarchical node creation
+  - **N/A Node Gap Filling**: Automatically creates placeholder nodes for skipped levels
+  - Hierarchical node creation with semantic parent tracking
   - Parent-child relationships
   - Multi-value attributes
 - **Two Processing Paths**:
@@ -226,16 +329,20 @@ npm run test:local     # Run Lambda locally
 
 ### 2. Mapping Rules Lambda
 
-**Purpose**: Maps customer taxonomies to master taxonomy using multiple strategies
+**Purpose**: Maps customer taxonomies to master taxonomy using multiple strategies with hierarchy context
 
 **Triggers**: EventBridge after Silver processing
 
 **Matching Strategies**:
 1. **Exact Matcher**: Case-insensitive exact string matching
 2. **Fuzzy Matcher**: Levenshtein distance (70% threshold)
-3. **AI Semantic Matcher**: AWS Bedrock (Claude/Llama) for semantic understanding
+3. **AI Semantic Matcher**: AWS Bedrock (Claude/Llama) with full hierarchy paths
+   - **N/A-Aware Prompts**: Includes `[SKIP]` markers for structural context
+   - **Hierarchy Filtering**: Excludes N/A from matching candidates
 
 **Features**:
+- **Hierarchy Context in AI Prompts**: LLM sees full path structure for better matching
+- **N/A Filtering**: Only real professions are matched, not placeholders
 - Confidence scoring (0-1)
 - Low-confidence flagging for human review
 - Mapping versioning support
@@ -249,16 +356,18 @@ npm run test:local     # Run Lambda locally
 
 ### 3. Translation Lambda
 
-**Purpose**: Real-time taxonomy translation via API
+**Purpose**: Real-time taxonomy translation via API with N/A-filtered display paths
 
 **Triggers**: API Gateway requests
 
 **Features**:
-- Existing mapping lookup
-- AI-powered translation fallback
+- **N/A-Filtered Display Paths**: All responses exclude N/A placeholder nodes
+- **Hierarchy Context in AI**: Includes full path structure for better translation
+- Existing mapping lookup with N/A filtering
+- AI-powered translation fallback with hierarchy context
 - Redis caching (1-hour TTL)
 - Ambiguity detection
-- Alternative suggestions
+- Alternative suggestions with display paths
 
 **Response Example**:
 ```json
@@ -266,15 +375,23 @@ npm run test:local     # Run Lambda locally
   "source": {
     "taxonomy": "customer_123",
     "code": "RN",
+    "path": "Healthcare → Nursing → Registered Nurse",
     "attributes": {"state": "CA"}
   },
   "target": {
     "taxonomy": "master",
     "codes": ["Registered Nurse - CA"],
-    "nodes": [...]
+    "nodes": [{
+      "nodeId": 12345,
+      "value": "Registered Nurse - CA",
+      "path": "Healthcare → Nursing Professionals → Registered Nurses → Registered Nurse - CA",
+      "level": 4,
+      "confidence": 0.95
+    }]
   },
+  "mappingMethod": "existing",
   "confidence": 0.95,
-  "cached": false
+  "ambiguous": false
 }
 ```
 
@@ -475,6 +592,10 @@ pulumi up --stack prod
 
 ## 📖 Documentation
 
+- **N/A Node System**:
+  - [N/A Node Implementation Summary](./docs/NA_NODE_IMPLEMENTATION_SUMMARY.md)
+  - [Integration Examples](./docs/INTEGRATION_EXAMPLES.md)
+  - [Migration Guide](./scripts/migrations/README.md)
 - [Meeting Notes (Oct 2, 2025)](./MEETING_NOTES_OCT2.md)
 - [Action Items](./ACTION_ITEMS.md)
 - [Master Taxonomy Research](./docs/MASTER_TAXONOMY_RESEARCH.md)
@@ -549,18 +670,43 @@ EVENT_BUS_NAME=taxonomy-events
 ## 📊 Key Metrics
 
 - **35+ TypeORM entities** (Bronze, Silver, Gold, Audit layers)
-- **3 Lambda functions** (fully implemented in TypeScript)
-  - Combined Ingestion & Cleansing v2.0 (26 TypeScript modules)
-  - Mapping Rules with 3 strategies (exact, fuzzy, AI semantic)
-  - Real-time Translation with caching
-- **Comprehensive test suite** (sample data generation, validation, local testing)
-- **26 TypeScript modules** in Ingestion & Cleansing Lambda
-- **Multi-level taxonomy hierarchy** support (master: up to 6 levels, customer: flat)
-- **100% TypeScript** (SQL-centric architecture)
+- **N/A Node System** with automatic gap filling and dual display modes
+- **2 Database Migrations** (N/A node type + 7 SQL helper functions)
+- **3 Lambda functions** (fully N/A-aware, implemented in TypeScript)
+  - Combined Ingestion & Cleansing v2.0 with automatic N/A gap filling
+  - Mapping Rules with hierarchy-aware AI prompts and N/A filtering
+  - Real-time Translation with N/A-filtered display paths
+- **Comprehensive test suite** (sample data generation, validation, N/A node testing)
+- **30+ TypeScript modules** across all Lambda functions
+- **Variable-depth taxonomy hierarchy** support with automatic placeholder nodes
+- **100% TypeScript** (SQL-centric architecture with N/A-aware queries)
 
 ---
 
 ## 🐛 Troubleshooting
+
+### N/A Node System Issues
+
+```bash
+# Check if migrations ran successfully
+npm run migrate:status
+
+# Verify N/A node type exists
+npm run test:na-nodes
+
+# Check for N/A nodes in database
+psql -h localhost -U propelus_admin -d propelus_taxonomy -c \
+  "SELECT COUNT(*) FROM silver_taxonomies_nodes WHERE node_type_id = -1;"
+
+# Verify SQL functions exist
+psql -h localhost -U propelus_admin -d propelus_taxonomy -c \
+  "SELECT proname FROM pg_proc WHERE proname LIKE 'get_node%';"
+```
+
+**Common Issues**:
+- **"N/A node type not found"**: Run `npm run migrate` to create N/A node type
+- **"Function get_node_full_path does not exist"**: Run `npm run migrate` to create SQL functions
+- **N/A nodes appearing in API responses**: Verify queries use `node_type_id != -1` filter
 
 ### Database Connection Issues
 ```bash
@@ -601,7 +747,8 @@ Copyright © 2025 Propelus AI
 
 ---
 
-**Last Updated**: October 3, 2025
-**Version**: 2.0.0
-**Status**: Production-Ready (90% complete)
+**Last Updated**: October 9, 2024
+**Version**: 2.1.0 (N/A Node System Integrated)
+**Status**: Production-Ready (95% complete)
 **Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect
+**Architecture Decision**: Martin's N/A Placeholder Node Approach (Oct 8, 2024)

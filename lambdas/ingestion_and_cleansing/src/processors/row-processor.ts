@@ -12,10 +12,12 @@ import { ensureNodeType, ensureAttributeType } from '../database/queries/silver-
 import { upsertNode } from '../database/queries/silver-nodes';
 import { upsertNodeAttribute } from '../database/queries/silver-attributes';
 import { markLoadedNode, markLoadedAttribute } from '../database/queries/reconciliation';
+import { NANodeHandler } from '@propelus/shared';
 
 interface NodePiece {
   nodeTypeName: string;
   value: string;
+  intendedLevel: number;  // Semantic level from column position
 }
 
 /**
@@ -40,19 +42,29 @@ export async function processRow(
     if (ctx.taxonomyType === 'master') {
       // Master taxonomy: ordered node columns from layout
       const masterLayout = ctx.layout as LayoutMaster;
-      for (const col of masterLayout.Nodes) {
+      for (let colIndex = 0; colIndex < masterLayout.Nodes.length; colIndex++) {
+        const col = masterLayout.Nodes[colIndex];
         const value = rowGet(col);
         if (value) {
-          chain.push({ nodeTypeName: col, value });
+          // Track intended level based on column position (1-indexed)
+          chain.push({
+            nodeTypeName: col,
+            value,
+            intendedLevel: colIndex + 1
+          });
         }
       }
     } else {
-      // Customer taxonomy: single profession column
+      // Customer taxonomy: single profession column at level 1
       const customerLayout = ctx.layout as LayoutCustomer;
       const professionCol = customerLayout['Proffesion column'].Profession;
       const value = rowGet(professionCol);
       if (value) {
-        chain.push({ nodeTypeName: professionCol, value });
+        chain.push({
+          nodeTypeName: professionCol,
+          value,
+          intendedLevel: 1
+        });
       }
     }
 
@@ -65,8 +77,12 @@ export async function processRow(
     // Profession = rightmost node value
     const profession = chain[chain.length - 1].value;
 
+    // Initialize N/A node handler for automatic gap filling
+    const naHandler = new NANodeHandler(client);
+
     // Walk chain to insert/upsert nodes with parent relationships
-    let parentNodeId: number | null = null;
+    let lastNodeId: number | null = null;
+    let lastNodeLevel: number | null = null;
     let finalNodeId = -1;
 
     for (let i = 0; i < chain.length; i++) {
@@ -75,15 +91,25 @@ export async function processRow(
       // Ensure node type exists
       const nodeTypeId = await ensureNodeType(client, piece.nodeTypeName, ctx.loadId, cache);
 
-      // Insert or upsert node
+      // Determine parent with automatic N/A gap filling
+      const parentNodeId = await naHandler.getOrCreateParentNode(
+        ctx.taxonomyId,
+        piece.intendedLevel,
+        lastNodeId,
+        lastNodeLevel,
+        ctx.loadId,
+        rowId
+      );
+
+      // Insert or upsert node at its intended level
       const nodeId = await upsertNode(client, ctx.loadType, {
         taxonomy_id: ctx.taxonomyId,
         customer_id: ctx.customerId,
         node_type_id: nodeTypeId,
-        parent_node_id: i === 0 ? null : parentNodeId,
+        parent_node_id: parentNodeId,
         value: piece.value,
         profession,
-        level: ctx.taxonomyType === 'master' ? i + 1 : 1,
+        level: ctx.taxonomyType === 'master' ? piece.intendedLevel : 1,
         load_id: ctx.loadId,
         row_id: rowId,
       });
@@ -93,7 +119,8 @@ export async function processRow(
         await markLoadedNode(client, ctx.taxonomyId, ctx.customerId, nodeTypeId, piece.value);
       }
 
-      parentNodeId = nodeId;
+      lastNodeId = nodeId;
+      lastNodeLevel = piece.intendedLevel;
       finalNodeId = nodeId;
     }
 

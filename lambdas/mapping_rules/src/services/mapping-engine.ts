@@ -9,6 +9,7 @@
 
 import { AppDataSource } from '../../../../shared/database/connection';
 import { logger } from '../../../../shared/utils/logger';
+import { NA_NODE_TYPE_ID } from '@propelus/shared';
 import { SilverTaxonomiesNodes } from '../../../../shared/database/entities/silver.entity';
 import {
   SilverMappingTaxonomies,
@@ -140,7 +141,7 @@ export class MappingEngine {
   }
 
   /**
-   * Get nodes to map from Silver layer
+   * Get nodes to map from Silver layer (excluding N/A placeholders)
    */
   private async getNodestToMap(
     taxonomyId: number,
@@ -153,14 +154,20 @@ export class MappingEngine {
         .createQueryBuilder('node')
         .where('node.taxonomy_id = :taxonomyId', { taxonomyId })
         .andWhere('node.node_id IN (:...nodeIds)', { nodeIds })
+        .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
         .getMany();
     }
 
-    return await repo.find({ where: { taxonomy_id: taxonomyId } });
+    // Exclude N/A placeholder nodes from mapping candidates
+    return await repo
+      .createQueryBuilder('node')
+      .where('node.taxonomy_id = :taxonomyId', { taxonomyId })
+      .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+      .getMany();
   }
 
   /**
-   * Get master taxonomy nodes
+   * Get master taxonomy nodes (excluding N/A placeholders)
    */
   private async getMasterTaxonomyNodes(): Promise<SilverTaxonomiesNodes[]> {
     const repo = AppDataSource.getRepository(SilverTaxonomiesNodes);
@@ -174,10 +181,13 @@ export class MappingEngine {
       throw new Error('Master taxonomy not found');
     }
 
-    return await repo.find({
-      where: { taxonomy_id: (masterTaxonomy as any).taxonomy_id },
-      relations: ['attributes'],
-    });
+    // Exclude N/A placeholder nodes from matching candidates
+    return await repo
+      .createQueryBuilder('node')
+      .where('node.taxonomy_id = :taxonomyId', { taxonomyId: (masterTaxonomy as any).taxonomy_id })
+      .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+      .leftJoinAndSelect('node.attributes', 'attributes')
+      .getMany();
   }
 
   /**

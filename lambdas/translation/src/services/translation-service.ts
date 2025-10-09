@@ -4,8 +4,10 @@
  * Handles translation logic using existing mappings and AI when needed.
  */
 
+import { Pool } from 'pg';
 import { AppDataSource } from '../../../../shared/database/connection';
 import { logger } from '../../../../shared/utils/logger';
+import { HierarchyQueries, NA_NODE_TYPE_ID } from '@propelus/shared';
 import {
   SilverTaxonomies,
   SilverTaxonomiesNodes,
@@ -22,6 +24,7 @@ export interface TranslationResult {
   source: {
     taxonomy: string;
     code: string;
+    path?: string;  // Display path (N/A filtered)
     attributes?: Record<string, any>;
   };
   target: {
@@ -30,6 +33,7 @@ export interface TranslationResult {
     nodes: Array<{
       nodeId: number;
       value: string;
+      path: string;  // Display path (N/A filtered)
       level: number;
       confidence: number;
     }>;
@@ -39,6 +43,7 @@ export interface TranslationResult {
   ambiguous: boolean;
   alternatives?: Array<{
     code: string;
+    path: string;  // Display path (N/A filtered)
     confidence: number;
   }>;
 }
@@ -46,12 +51,32 @@ export interface TranslationResult {
 export class TranslationService {
   private cacheService: CacheService;
   private bedrockClient: BedrockRuntimeClient;
+  private pool: Pool;
+  private hierarchyQueries: HierarchyQueries;
 
   constructor(cacheService: CacheService) {
     this.cacheService = cacheService;
     this.bedrockClient = new BedrockRuntimeClient({
       region: process.env.AWS_REGION || 'us-east-1',
     });
+
+    // Initialize database pool for hierarchy queries
+    this.pool = new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      database: process.env.DB_NAME || 'propelus_taxonomy',
+      user: process.env.DB_USER || 'propelus_admin',
+      password: process.env.DB_PASSWORD,
+    });
+
+    this.hierarchyQueries = new HierarchyQueries(this.pool);
+  }
+
+  /**
+   * Cleanup database connections (call when Lambda is shutting down)
+   */
+  async cleanup(): Promise<void> {
+    await this.pool.end();
   }
 
   /**
@@ -95,11 +120,12 @@ export class TranslationService {
 
       if (existingMapping && existingMapping.length > 0) {
         logger.info('Using existing mapping', { mappingCount: existingMapping.length });
-        return this.createResultFromMapping(
+        return await this.createResultFromMapping(
           sourceTaxonomy,
           targetTaxonomy,
           sourceCode,
           attributes,
+          sourceNode,
           existingMapping,
           'existing'
         );
@@ -153,7 +179,7 @@ export class TranslationService {
   }
 
   /**
-   * Find node by code and attributes
+   * Find node by code and attributes (excluding N/A placeholders)
    */
   private async findNodeByCode(
     taxonomyId: number,
@@ -162,25 +188,31 @@ export class TranslationService {
   ): Promise<SilverTaxonomiesNodes | null> {
     const repo = AppDataSource.getRepository(SilverTaxonomiesNodes);
 
-    // Try exact match first
-    let node = await repo.findOne({
-      where: { taxonomy_id: taxonomyId, value: code },
-      relations: ['attributes'],
-    });
+    // Try exact match first (exclude N/A nodes)
+    let node = await repo
+      .createQueryBuilder('node')
+      .where('node.taxonomy_id = :taxonomyId', { taxonomyId })
+      .andWhere('node.value = :code', { code })
+      .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+      .leftJoinAndSelect('node.attributes', 'attributes')
+      .getOne();
 
     if (node) return node;
 
-    // Try matching by profession
-    node = await repo.findOne({
-      where: { taxonomy_id: taxonomyId, profession: code },
-      relations: ['attributes'],
-    });
+    // Try matching by profession (exclude N/A nodes)
+    node = await repo
+      .createQueryBuilder('node')
+      .where('node.taxonomy_id = :taxonomyId', { taxonomyId })
+      .andWhere('node.profession = :code', { code })
+      .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+      .leftJoinAndSelect('node.attributes', 'attributes')
+      .getOne();
 
     return node;
   }
 
   /**
-   * Find existing mapping from source to target
+   * Find existing mapping from source to target (excluding N/A placeholders)
    */
   private async findExistingMapping(
     sourceNodeId: number,
@@ -197,9 +229,13 @@ export class TranslationService {
     const results = [];
 
     for (const mapping of mappings) {
-      const targetNode = await nodeRepo.findOne({
-        where: { node_id: mapping.master_node_id, taxonomy_id: targetTaxonomyId },
-      });
+      // Exclude N/A placeholder nodes from translation results
+      const targetNode = await nodeRepo
+        .createQueryBuilder('node')
+        .where('node.node_id = :nodeId', { nodeId: mapping.master_node_id })
+        .andWhere('node.taxonomy_id = :taxonomyId', { taxonomyId: targetTaxonomyId })
+        .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+        .getOne();
 
       if (targetNode) {
         results.push({
@@ -213,27 +249,48 @@ export class TranslationService {
   }
 
   /**
-   * Translate using AI
+   * Translate using AI with hierarchy context
    */
   private async translateWithAI(
     sourceNode: SilverTaxonomiesNodes,
     targetTaxonomyId: number
   ): Promise<any> {
-    // Get target taxonomy nodes for context
-    const targetNodes = await AppDataSource.getRepository(SilverTaxonomiesNodes).find({
-      where: { taxonomy_id: targetTaxonomyId },
-      take: 50, // Limit for token size
-    });
+    // Get source node hierarchy path
+    const sourcePath = await this.hierarchyQueries.getFullPath(sourceNode.node_id);
+    const sourcePathFormatted = this.hierarchyQueries.formatPathForLLM(sourcePath);
+
+    // Get target taxonomy nodes for context (exclude N/A placeholders)
+    const targetNodes = await AppDataSource.getRepository(SilverTaxonomiesNodes)
+      .createQueryBuilder('node')
+      .where('node.taxonomy_id = :taxonomyId', { taxonomyId: targetTaxonomyId })
+      .andWhere('node.node_type_id != :naNodeTypeId', { naNodeTypeId: NA_NODE_TYPE_ID })
+      .take(50) // Limit for token size
+      .getMany();
+
+    // Get hierarchy paths for sample target nodes
+    const targetSamples = await Promise.all(
+      targetNodes.slice(0, 10).map(async (node) => {
+        const path = await this.hierarchyQueries.getFullPath(node.node_id);
+        const pathFormatted = this.hierarchyQueries.formatPathForLLM(path);
+        return `- Path: ${pathFormatted}\n  Value: ${node.value} (Level ${node.level})`;
+      })
+    );
 
     const prompt = `Translate the following healthcare profession from source taxonomy to target taxonomy:
 
 Source Node:
+- Hierarchy Path: ${sourcePathFormatted}
 - Value: ${sourceNode.value}
 - Profession: ${sourceNode.profession || 'N/A'}
 - Level: ${sourceNode.level}
 
-Target Taxonomy has ${targetNodes.length} nodes including:
-${targetNodes.slice(0, 10).map((n) => `- ${n.value} (Level ${n.level})`).join('\n')}
+Target Taxonomy has ${targetNodes.length} active nodes. Sample nodes:
+${targetSamples.join('\n\n')}
+
+IMPORTANT NOTES:
+- "[SKIP]" in paths indicates N/A placeholder levels where hierarchy gaps exist
+- Focus on the SEMANTIC MEANING of non-[SKIP] values
+- Consider the LEVEL STRUCTURE when matching (L1, L2, etc.)
 
 Provide the most appropriate translation(s). Respond with JSON:
 {
@@ -284,42 +341,58 @@ Provide the most appropriate translation(s). Respond with JSON:
   }
 
   /**
-   * Create result from existing mapping
+   * Create result from existing mapping with display paths
    */
-  private createResultFromMapping(
+  private async createResultFromMapping(
     sourceTaxonomy: string,
     targetTaxonomy: string,
     sourceCode: string,
     attributes: Record<string, any>,
+    sourceNode: SilverTaxonomiesNodes,
     mappings: Array<{ node: SilverTaxonomiesNodes; confidence: number }>,
     method: 'existing' | 'ai_translation'
-  ): TranslationResult {
+  ): Promise<TranslationResult> {
+    // Get source display path (N/A filtered)
+    const sourcePath = await this.hierarchyQueries.getDisplayPath(sourceNode.node_id);
+
+    // Get target display paths for all mappings
+    const nodesWithPaths = await Promise.all(
+      mappings.map(async (m) => ({
+        nodeId: m.node.node_id,
+        value: m.node.value,
+        path: await this.hierarchyQueries.getDisplayPath(m.node.node_id),
+        level: m.node.level,
+        confidence: m.confidence,
+      }))
+    );
+
+    // Get alternatives with paths
+    const alternatives = mappings.length > 1
+      ? await Promise.all(
+          mappings.slice(1).map(async (m) => ({
+            code: m.node.value,
+            path: await this.hierarchyQueries.getDisplayPath(m.node.node_id),
+            confidence: m.confidence,
+          }))
+        )
+      : undefined;
+
     return {
       source: {
         taxonomy: sourceTaxonomy,
         code: sourceCode,
+        path: sourcePath,
         attributes,
       },
       target: {
         taxonomy: targetTaxonomy,
         codes: mappings.map((m) => m.node.value),
-        nodes: mappings.map((m) => ({
-          nodeId: m.node.node_id,
-          value: m.node.value,
-          level: m.node.level,
-          confidence: m.confidence,
-        })),
+        nodes: nodesWithPaths,
       },
       mappingMethod: method,
       confidence: mappings[0]?.confidence || 0,
       ambiguous: mappings.length > 1,
-      alternatives:
-        mappings.length > 1
-          ? mappings.slice(1).map((m) => ({
-              code: m.node.value,
-              confidence: m.confidence,
-            }))
-          : undefined,
+      alternatives,
     };
   }
 

@@ -12,10 +12,13 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:na-nodes": "ts-node scripts/test-na-nodes.ts",
     "lint": "eslint . --ext .ts,.tsx",
     "lint:fix": "eslint . --ext .ts,.tsx --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md}\"",
     "type-check": "tsc --noEmit",
+    "migrate": "ts-node scripts/run-migrations.ts migrate",
+    "migrate:status": "ts-node scripts/run-migrations.ts status",
     "clean": "rm -rf dist node_modules lambdas/*/dist lambdas/*/node_modules services/*/dist services/*/node_modules"
   },
   "devDependencies": {

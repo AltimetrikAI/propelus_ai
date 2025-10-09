@@ -9,7 +9,9 @@ import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from '@aws-sdk/client-bedrock-runtime';
+import { Pool } from 'pg';
 import { logger } from '../../../../shared/utils/logger';
+import { HierarchyQueries } from '@propelus/shared';
 import { SilverTaxonomiesNodes } from '../../../../shared/database/entities/silver.entity';
 import { MappingDecision } from '../services/mapping-engine';
 
@@ -22,6 +24,8 @@ interface BedrockResponse {
 export class AISemanticMatcher {
   private bedrockClient: BedrockRuntimeClient;
   private modelId: string;
+  private pool: Pool;
+  private hierarchyQueries: HierarchyQueries;
 
   constructor() {
     this.bedrockClient = new BedrockRuntimeClient({
@@ -29,6 +33,24 @@ export class AISemanticMatcher {
     });
     // Use Claude 3 Sonnet by default, can be configured via env var
     this.modelId = process.env.BEDROCK_MODEL_ID || 'anthropic.claude-3-sonnet-20240229-v1:0';
+
+    // Initialize database pool for hierarchy queries
+    this.pool = new Pool({
+      host: process.env.DB_HOST || 'localhost',
+      port: parseInt(process.env.DB_PORT || '5432'),
+      database: process.env.DB_NAME || 'propelus_taxonomy',
+      user: process.env.DB_USER || 'propelus_admin',
+      password: process.env.DB_PASSWORD,
+    });
+
+    this.hierarchyQueries = new HierarchyQueries(this.pool);
+  }
+
+  /**
+   * Cleanup database connections (call when Lambda is shutting down)
+   */
+  async cleanup(): Promise<void> {
+    await this.pool.end();
   }
 
   /**
@@ -56,8 +78,8 @@ export class AISemanticMatcher {
       // Limit to top candidates to avoid token limits
       const candidates = relevantMasterNodes.slice(0, 20);
 
-      // Build prompt for AI
-      const prompt = this.buildMatchingPrompt(childNode, candidates);
+      // Build prompt for AI with hierarchy context
+      const prompt = await this.buildMatchingPrompt(childNode, candidates);
 
       // Call Bedrock
       const response = await this.invokeBedrockModel(prompt);
@@ -91,23 +113,34 @@ export class AISemanticMatcher {
   }
 
   /**
-   * Build prompt for AI matching
+   * Build prompt for AI matching with hierarchy context
    */
-  private buildMatchingPrompt(
+  private async buildMatchingPrompt(
     childNode: SilverTaxonomiesNodes,
     masterNodes: SilverTaxonomiesNodes[]
-  ): string {
-    const masterNodesDescription = masterNodes
-      .map(
-        (node, idx) =>
-          `${idx + 1}. ID: ${node.node_id}, Value: "${node.value}", Profession: "${node.profession || 'N/A'}"`
-      )
-      .join('\n');
+  ): Promise<string> {
+    // Get child node hierarchy path
+    const childPath = await this.hierarchyQueries.getFullPath(childNode.node_id);
+    const childPathFormatted = this.hierarchyQueries.formatPathForLLM(childPath);
+
+    // Get master node hierarchy paths
+    const masterNodesWithPaths = await Promise.all(
+      masterNodes.map(async (node, idx) => {
+        const masterPath = await this.hierarchyQueries.getFullPath(node.node_id);
+        const masterPathFormatted = this.hierarchyQueries.formatPathForLLM(masterPath);
+        return `${idx + 1}. ID: ${node.node_id}
+   Path: ${masterPathFormatted}
+   Value: "${node.value}", Profession: "${node.profession || 'N/A'}"`;
+      })
+    );
+
+    const masterNodesDescription = masterNodesWithPaths.join('\n\n');
 
     return `You are a healthcare profession taxonomy mapping expert. Your task is to find the best semantic match for a given profession from a list of master taxonomy nodes.
 
 Child Node to Match:
 - ID: ${childNode.node_id}
+- Hierarchy Path: ${childPathFormatted}
 - Value: "${childNode.value}"
 - Profession: "${childNode.profession || 'N/A'}"
 - Level: ${childNode.level}
@@ -115,10 +148,16 @@ Child Node to Match:
 Master Taxonomy Candidates:
 ${masterNodesDescription}
 
+IMPORTANT NOTES:
+- "[SKIP]" in paths indicates N/A placeholder levels where hierarchy gaps exist
+- Focus on the SEMANTIC MEANING of non-[SKIP] values
+- Consider the LEVEL STRUCTURE when matching (L1, L2, etc.)
+- Healthcare professions may have abbreviations and synonyms
+
 Instructions:
-1. Analyze the semantic meaning of the child node
+1. Analyze the semantic meaning and hierarchy context of the child node
 2. Consider healthcare profession context, abbreviations, and synonyms
-3. Find the best matching master node
+3. Find the best matching master node based on both value and hierarchy position
 4. Provide a confidence score (0.0 - 1.0) based on semantic similarity
 5. Explain your reasoning
 
@@ -133,7 +172,7 @@ Example:
 {
   "masterNodeId": 123,
   "confidence": 0.85,
-  "reasoning": "RN matches Registered Nurse with high confidence"
+  "reasoning": "RN matches Registered Nurse with high confidence at same hierarchy level"
 }`;
   }
 
