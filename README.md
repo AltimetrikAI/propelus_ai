@@ -12,17 +12,22 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 
 **Current Progress: 100% Complete (Core Features)** ✅
 **Algorithm Version: v1.0** 🎯
+**Schema Version: v3.1.0** 📊
 
 ### ✅ Completed Components
 - ✅ TypeScript project structure with npm workspaces
-- ✅ Database models (TypeORM) - 35+ entities
+- ✅ Database models (TypeORM) - 37+ entities ⭐ **UPDATED**
+- ✅ **Schema Alignment Complete** - Full data lineage tracking and load lifecycle management ⭐ **NEW**
 - ✅ **Algorithm v1.0** - Production-ready ingestion with rolling ancestor memory
 - ✅ **N/A Node System** - Hierarchical gap handling with placeholder nodes
-- ✅ **Database Migrations** - 3 migrations (N/A nodes + SQL functions + natural key update)
+- ✅ **Database Migrations** - 4 migrations (N/A nodes + SQL functions + natural key + schema alignment) ⭐ **UPDATED**
 - ✅ **Combined Ingestion & Cleansing Lambda v1.0** (Bronze → Silver with rolling parent resolution)
 - ✅ **Explicit Node Levels** - Support for level 0 (root) through level N with numeric indicators
 - ✅ **Rolling Ancestor Resolver** - State management for parent resolution across rows
 - ✅ **Updated Natural Key** - Includes parent_node_id to allow same value under different parents
+- ✅ **Data Lineage Tracking** - Complete traceability from Bronze to Gold with load_id and row_id ⭐ **NEW**
+- ✅ **Load Lifecycle Management** - Track load status, start/end times, and active flags ⭐ **NEW**
+- ✅ **Version Tracking** - Complete audit trail for taxonomies and mappings with remapping support ⭐ **NEW**
 - ✅ Mapping Rules Lambda (exact, fuzzy, AI semantic matching with hierarchy context)
 - ✅ Translation Lambda (real-time translation with N/A-filtered display paths)
 - ✅ Step Functions orchestration workflow
@@ -265,6 +270,108 @@ psql -h localhost -U propelus_admin -d propelus_taxonomy \
 - Creates new constraint with `parent_node_id`
 - Adds indexes for parent queries and root nodes
 - Handles duplicate rows automatically
+
+---
+
+## 📊 Schema Alignment v3.1.0 (October 2024)
+
+### Complete Data Lineage & Load Lifecycle Management
+
+**Purpose**: Align TypeORM entities with Data Engineer specification for complete operational visibility and data quality tracking.
+
+### What's New in Schema v3.1.0
+
+**Data Lineage Tracking**: Every Silver layer record traces back to Bronze
+- `load_id` foreign keys throughout Silver layer
+- `row_id` foreign keys linking to specific Bronze rows
+- Complete audit trail from source to production
+
+**Load Lifecycle Management**: Track entire load process
+- `load_start` / `load_end` timestamps for performance monitoring
+- `load_status` tracking: 'completed', 'partially completed', 'failed', 'in progress'
+- `load_active_flag` for manual data management
+- `load_type` ('new' or 'updated') and `taxonomy_type` ('master' or 'customer')
+
+**Row-Level Status Tracking**: Granular error handling
+- `row_load_status` on bronze_taxonomies: 'completed', 'in progress', 'failed'
+- `row_active_flag` for row-level control
+- Precise identification of failed rows
+
+**Version Tracking**: Complete audit trail
+- `silver_taxonomies_versions` - tracks taxonomy structural changes over time
+- `silver_mapping_taxonomies_versions` - tracks mapping changes between taxonomies
+- Remapping support with processing metrics
+- Version date ranges and affected nodes/attributes tracking
+
+**Status Management**: Active/inactive control across Silver layer
+- `status` column on all Silver tables ('active' or 'inactive')
+- Soft delete support without data loss
+- Manual override capability for data quality
+
+### Schema Updates Summary
+
+**8 Entities Updated**:
+1. bronze_load_details - lifecycle tracking
+2. bronze_taxonomies - row status tracking
+3. silver_taxonomies - lineage
+4. silver_taxonomies_nodes_types - lineage
+5. silver_taxonomies_attribute_types - status + lineage
+6. silver_taxonomies_nodes - status + lineage + row traceability
+7. silver_taxonomies_nodes_attributes - status + lineage + row traceability
+8. gold_mapping_taxonomies - renamed for consistency
+
+**2 New Tables Created**:
+1. silver_taxonomies_versions - taxonomy version tracking
+2. silver_mapping_taxonomies_versions - mapping version tracking
+
+**~25 Columns Added** across all layers
+
+### Database Migration 004
+
+```bash
+# Run migration 004 for schema alignment
+npm run migrate
+
+# Or manually:
+psql -h localhost -U propelus_admin -d propelus_taxonomy \
+  -f scripts/migrations/004-schema-alignment.sql
+```
+
+**Migration 004 includes**:
+- ALTER TABLE statements for new columns
+- CREATE TABLE statements for version tracking
+- RENAME TABLE for gold layer consistency
+- CREATE INDEX statements for performance
+
+### Benefits
+
+**For Operations**:
+- ✅ Granular error tracking - know exactly which rows failed
+- ✅ Load performance metrics - track start/end times
+- ✅ Manual data control - active flags for overrides
+
+**For Development**:
+- ✅ Full lineage - trace any Silver data back to Bronze
+- ✅ Version history - complete audit trail
+- ✅ Status management - soft deletes and overrides
+
+**For Business**:
+- ✅ Data quality - better error handling and recovery
+- ✅ Audit compliance - complete data flow tracking
+- ✅ Operational visibility - load status monitoring
+
+### Compatibility
+
+✅ **100% compatible with Algorithm v1.0**
+- All core features remain operational
+- Rolling ancestor memory unchanged
+- Natural key constraints unchanged
+
+### Documentation
+
+- [Schema Updates Details](./SCHEMA_UPDATES_OCTOBER_14.md)
+- [Schema Comparison](./SCHEMA_COMPARISON.md)
+- [Verification Summary](./SCHEMA_VERIFICATION_COMPLETE.md)
 
 ---
 
@@ -524,26 +631,34 @@ Mapping Rules
 ### Key Tables:
 
 #### Bronze Layer
-- `bronze_load_details` - Load metadata
-- `bronze_taxonomies` - Raw taxonomy data
-- `bronze_professions` - Raw profession data
+- `bronze_load_details` - Load metadata with lifecycle tracking ⭐ **UPDATED**
+  - New: load_start, load_end, load_status, load_active_flag, load_type, taxonomy_type
+- `bronze_taxonomies` - Raw taxonomy data with row status ⭐ **UPDATED**
+  - Renamed: id → row_id
+  - New: row_load_status, row_active_flag
 
 #### Silver Layer
-- `silver_taxonomies` - Structured taxonomies
-- `silver_taxonomies_nodes` - Hierarchical nodes
-- `silver_taxonomies_nodes_attributes` - Node attributes
+- `silver_taxonomies` - Structured taxonomies with lineage ⭐ **UPDATED**
+- `silver_taxonomies_nodes_types` - Node type dictionary with lineage ⭐ **UPDATED**
+- `silver_taxonomies_attribute_types` - Attribute types with status and lineage ⭐ **UPDATED**
+- `silver_taxonomies_nodes` - Hierarchical nodes with complete tracking ⭐ **UPDATED**
+  - New: status, load_id, row_id
+- `silver_taxonomies_nodes_attributes` - Node attributes with tracking ⭐ **UPDATED**
+  - New: status, load_id, row_id
+- `silver_taxonomies_versions` - Taxonomy version history ⭐ **NEW**
 - `silver_professions` - Normalized professions
 - `silver_mapping_taxonomies` - Taxonomy mappings
+- `silver_mapping_taxonomies_versions` - Mapping version history ⭐ **NEW**
 - `silver_mapping_taxonomies_rules` - Mapping rules
 
 #### Gold Layer
-- `gold_taxonomies_mapping` - Approved mappings
+- `gold_mapping_taxonomies` - Approved mappings ⭐ **RENAMED** (was gold_taxonomies_mapping)
 - `gold_mapping_professions` - Production-ready data
 
 #### Audit Layer
 - 12+ audit log tables tracking all changes
-- Version history tracking
-- Remapping support
+- Version history tracking with remapping support
+- Complete data lineage from Bronze to Gold
 
 ---
 
@@ -682,9 +797,13 @@ pulumi up --stack prod
 ## 📖 Documentation
 
 - **Algorithm v1.0**:
-  - [Implementation Summary](./ALGORITHM_V1_IMPLEMENTATION_SUMMARY.md) ⭐ **NEW**
+  - [Implementation Summary](./ALGORITHM_V1_IMPLEMENTATION_SUMMARY.md)
   - [Project Documentation](./PROJECT_DOCUMENTATION.md)
   - [API Documentation](./API_DOCUMENTATION.md)
+- **Schema Alignment v3.1.0**: ⭐ **NEW**
+  - [Schema Updates Details](./SCHEMA_UPDATES_OCTOBER_14.md)
+  - [Schema Comparison](./SCHEMA_COMPARISON.md)
+  - [Verification Summary](./SCHEMA_VERIFICATION_COMPLETE.md)
 - **N/A Node System**:
   - [N/A Node Implementation Summary](./docs/NA_NODE_IMPLEMENTATION_SUMMARY.md)
   - [Integration Examples](./docs/INTEGRATION_EXAMPLES.md)
@@ -692,7 +811,8 @@ pulumi up --stack prod
 - **Database Migrations**:
   - [001: Create N/A Node Type](./scripts/migrations/001-create-na-node-type.sql)
   - [002: Hierarchy Helper Functions](./scripts/migrations/002-create-hierarchy-helper-functions.sql)
-  - [003: Update Node Natural Key](./scripts/migrations/003-update-node-natural-key.sql) ⭐ **NEW**
+  - [003: Update Node Natural Key](./scripts/migrations/003-update-node-natural-key.sql)
+  - [004: Schema Alignment](./scripts/migrations/004-schema-alignment.sql) ⭐ **NEW**
 - **Research & Planning**:
   - [Master Taxonomy Research](./docs/MASTER_TAXONOMY_RESEARCH.md)
   - [Data Model v0.42 Description](./docs/Data%20model%200.42%20tables%20description.pdf)
@@ -767,9 +887,10 @@ EVENT_BUS_NAME=taxonomy-events
 
 ## 📊 Key Metrics
 
-- **35+ TypeORM entities** (Bronze, Silver, Gold, Audit layers)
+- **37+ TypeORM entities** (Bronze, Silver, Gold, Audit layers) ⭐ **UPDATED**
 - **Algorithm v1.0** - Production-ready with rolling ancestor memory
-- **3 Database Migrations** (N/A node type + SQL functions + natural key update)
+- **Schema v3.1.0** - Complete data lineage and lifecycle management ⭐ **NEW**
+- **4 Database Migrations** (N/A node type + SQL functions + natural key + schema alignment) ⭐ **UPDATED**
 - **3 Lambda functions** (fully v1.0-compliant, implemented in TypeScript)
   - Combined Ingestion & Cleansing v1.0 with rolling parent resolution
   - Mapping Rules with hierarchy-aware AI prompts and N/A filtering
@@ -777,6 +898,9 @@ EVENT_BUS_NAME=taxonomy-events
 - **Rolling Ancestor Resolver** - State management across rows for parent resolution
 - **Explicit Node Levels** - Support for level 0 (root) through level N
 - **Updated Natural Key** - Includes parent_node_id for flexible hierarchies
+- **Full Data Lineage** - load_id and row_id tracking throughout Silver layer ⭐ **NEW**
+- **Load Lifecycle Management** - Status tracking, timestamps, and active flags ⭐ **NEW**
+- **Version Tracking** - Complete audit trail for taxonomies and mappings ⭐ **NEW**
 - **Comprehensive test suite** (sample data generation, validation, N/A node testing)
 - **35+ TypeScript modules** across all Lambda functions
 - **Variable-depth taxonomy hierarchy** support with explicit numeric levels
@@ -849,10 +973,12 @@ Copyright © 2025 Propelus AI
 ---
 
 **Last Updated**: October 14, 2024
-**Version**: 3.0.0 (Algorithm v1.0 - Production Ready)
+**Version**: 3.1.0 (Schema Alignment Complete)
 **Status**: ✅ Production-Ready (100% Core Features Complete)
 **Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect
 **Major Updates**:
+- Schema Alignment v3.1.0 - Complete data lineage and lifecycle management (Oct 14, 2024) ⭐ **NEW**
 - Algorithm v1.0 with Rolling Ancestor Memory (Oct 14, 2024)
 - Explicit Node Levels & Updated Natural Key (Oct 14, 2024)
+- Marcin's Data Engineer Schema Specification (Oct 14, 2024) ⭐ **NEW**
 - Martin's N/A Placeholder Node Approach (Oct 8, 2024)

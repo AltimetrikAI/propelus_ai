@@ -9,11 +9,11 @@ The Propelus Taxonomy Framework is an AI-powered system for standardizing health
 - **Updated Natural Key**: Includes parent_node_id to allow same value under different parents
 - **Profession Column**: Separate from hierarchy, stored on nodes but not as hierarchical level
 
-**Last Updated**: October 14, 2024 - Algorithm v1.0 Production Ready
-**Version**: 3.0.0
+**Last Updated**: October 14, 2024 - Schema Alignment v3.1.0 Complete
+**Version**: 3.1.0
 **Author**: Douglas Martins, Senior AI Engineer/Architect
 
-## 🎯 Architecture Model (October 2024 - v1.0)
+## 🎯 Architecture Model (October 2024 - v3.1.0)
 
 ### Key Architectural Decisions
 After extensive meetings, customer data analysis, and algorithm refinement:
@@ -23,10 +23,14 @@ After extensive meetings, customer data analysis, and algorithm refinement:
 - ✅ **Variable customer taxonomies** - supports both flat lists and hierarchical structures
 - ✅ **Algorithm v1.0** - Rolling ancestor memory for parent resolution
 - ✅ **Explicit Node Levels** - Numeric indicators (0-N) for variable-depth hierarchies
+- ✅ **Schema v3.1.0** - Complete data lineage and load lifecycle management ⭐ **NEW**
 - ✅ **Direct mapping**: Customer professions → Master taxonomy (no intermediate layers)
 - ✅ **Request-based**: All interactions tracked with request_id for async operations
 - ✅ **Remapping support**: Historical mappings reprocessed when master taxonomy updates
 - ✅ **Updated Natural Key**: Includes parent_node_id to allow same value under different parents
+- ✅ **Full Data Lineage**: load_id and row_id tracking throughout Silver layer ⭐ **NEW**
+- ✅ **Load Lifecycle Management**: Status tracking, timestamps, and active flags ⭐ **NEW**
+- ✅ **Version Tracking**: Complete audit trail for taxonomies and mappings ⭐ **NEW**
 
 **Customer Data Variability:**
 Customers provide data in various formats:
@@ -338,6 +342,149 @@ WHERE node_type_id = -1 AND value LIKE '%N/A%';
 - [Implementation Summary](./docs/NA_NODE_IMPLEMENTATION_SUMMARY.md)
 - [Integration Examples](./docs/INTEGRATION_EXAMPLES.md)
 - [Migration Guide](./scripts/migrations/README.md)
+
+---
+
+## Schema Alignment v3.1.0 (October 2024)
+
+### Complete Data Lineage & Load Lifecycle Management
+
+**Requested by**: Marcin, Data Engineer
+**Implemented by**: Douglas Martins, Senior AI Engineer
+**Purpose**: Align TypeORM entities with Data Engineer specification for complete operational visibility and data quality tracking
+
+### Key Features
+
+#### 1. Data Lineage Tracking
+Every Silver layer record traces back to Bronze source:
+- **load_id foreign keys**: Throughout Silver layer (taxonomies, nodes, attributes, mappings)
+- **row_id foreign keys**: Link Silver records to specific Bronze rows
+- **Complete audit trail**: From source file/API to production data
+
+**Benefits**:
+- Debug data issues by tracing back to source
+- Understand data transformation path
+- Support compliance and audit requirements
+
+#### 2. Load Lifecycle Management
+Track entire load process from start to finish:
+- **load_start / load_end**: Timestamps for performance monitoring
+- **load_status**: 'completed', 'partially completed', 'failed', 'in progress'
+- **load_active_flag**: Manual override capability
+- **load_type**: 'new' or 'updated' load identification
+- **taxonomy_type**: 'master' or 'customer' classification
+
+**Benefits**:
+- Monitor load performance and identify bottlenecks
+- Detect partial failures and retry specific loads
+- Manual data management with active flags
+
+#### 3. Row-Level Status Tracking
+Granular error handling at the row level:
+- **row_load_status**: 'completed', 'in progress', 'failed' per Bronze row
+- **row_active_flag**: Row-level manual control
+- **Precise error identification**: Know exactly which rows failed
+
+**Benefits**:
+- Identify and fix specific problematic rows
+- Better error reporting to customers
+- Improved data quality over time
+
+#### 4. Version Tracking
+Complete audit trail for taxonomy and mapping evolution:
+
+**silver_taxonomies_versions**:
+- Tracks structural changes (nodes added/deleted, attributes changed)
+- Stores affected_nodes and affected_attributes (JSONB)
+- Remapping support with processing metrics
+- Version date ranges for historical queries
+
+**silver_mapping_taxonomies_versions**:
+- Tracks mapping changes between taxonomies
+- Stores affected_mappings (JSONB)
+- Remapping support with counters
+- Version lineage and rollback capability
+
+**Benefits**:
+- Complete taxonomy evolution history
+- Support for remapping when master taxonomy updates
+- Rollback capability if needed
+- Audit compliance for data changes
+
+#### 5. Status Management
+Active/inactive control across all Silver tables:
+- **status column**: 'active' or 'inactive' on all Silver entities
+- **Soft delete support**: Mark records inactive without data loss
+- **Manual override**: Data quality team can manage status
+
+**Benefits**:
+- Soft delete without losing historical data
+- Manual data quality overrides
+- Improved query performance (filter by active only)
+
+### Schema Updates Summary
+
+**8 Entities Updated**:
+1. `bronze_load_details` - lifecycle tracking
+2. `bronze_taxonomies` - row status tracking (id → row_id)
+3. `silver_taxonomies` - lineage (load_id)
+4. `silver_taxonomies_nodes_types` - lineage (load_id)
+5. `silver_taxonomies_attribute_types` - status + lineage
+6. `silver_taxonomies_nodes` - status + complete lineage + row traceability
+7. `silver_taxonomies_nodes_attributes` - status + complete lineage + row traceability
+8. `gold_mapping_taxonomies` - renamed from gold_taxonomies_mapping
+
+**2 New Tables Created**:
+1. `silver_taxonomies_versions` - taxonomy version history
+2. `silver_mapping_taxonomies_versions` - mapping version history
+
+**~25 Columns Added** across all layers
+
+### Database Migration 004
+
+Complete SQL migration provided in `SCHEMA_UPDATES_OCTOBER_14.md`:
+- ALTER TABLE statements for new columns
+- CREATE TABLE statements for version tracking
+- RENAME TABLE for naming consistency
+- CREATE INDEX statements for performance optimization
+
+```bash
+# Run migration
+npm run migrate
+
+# Or manually
+psql -h localhost -U propelus_admin -d propelus_taxonomy \
+  -f scripts/migrations/004-schema-alignment.sql
+```
+
+### Compatibility
+
+✅ **100% compatible with Algorithm v1.0**:
+- All core features remain operational
+- Rolling ancestor memory unchanged
+- Explicit node levels unchanged
+- Natural key constraints unchanged
+
+### Implementation Notes
+
+**For Lambda Developers**:
+- Update load opening logic to set load_start, load_type, taxonomy_type
+- Update load finalization to set load_end, load_status
+- Update row processing to track row_load_status
+- Pass load_id and row_id to Silver layer inserts
+- Set status='active' by default on all Silver records
+
+**For Query Writers**:
+- Add `WHERE status = 'active'` to filter inactive records
+- Use load_id to trace data lineage
+- Use row_id to link Silver back to Bronze
+- Query version tables for historical analysis
+
+### Documentation
+
+- [Schema Updates Details](./SCHEMA_UPDATES_OCTOBER_14.md)
+- [Schema Comparison](./SCHEMA_COMPARISON.md)
+- [Verification Summary](./SCHEMA_VERIFICATION_COMPLETE.md)
 
 ---
 
