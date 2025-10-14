@@ -1,23 +1,32 @@
 # Propelus Healthcare Taxonomy Project Documentation
 
 ## Executive Summary
-The Propelus Taxonomy Framework is an AI-powered system for standardizing healthcare profession data by mapping customer profession lists (flat or hierarchical) directly to a single master taxonomy. It uses a three-layer data architecture (Bronze, Silver, Gold) with Lambda functions for processing, applying both deterministic rules and AI/LLM capabilities. The system handles variable-depth hierarchies using N/A placeholder nodes for automatic gap filling.
+The Propelus Taxonomy Framework is an AI-powered system for standardizing healthcare profession data by mapping customer profession lists (flat or hierarchical) directly to a single master taxonomy. It uses a three-layer data architecture (Bronze, Silver, Gold) with Lambda functions for processing, applying both deterministic rules and AI/LLM capabilities.
 
-**Last Updated**: October 9, 2024 - N/A Node System Integrated (v2.1.0)
+**Algorithm v1.0** implements revolutionary features including:
+- **Rolling Ancestor Memory**: Parent resolution across rows using state management
+- **Explicit Node Levels**: Numeric level indicators (0-N) for variable-depth hierarchies
+- **Updated Natural Key**: Includes parent_node_id to allow same value under different parents
+- **Profession Column**: Separate from hierarchy, stored on nodes but not as hierarchical level
+
+**Last Updated**: October 14, 2024 - Algorithm v1.0 Production Ready
+**Version**: 3.0.0
 **Author**: Douglas Martins, Senior AI Engineer/Architect
 
-## 🎯 Simplified Architecture Model (September 2025)
+## 🎯 Architecture Model (October 2024 - v1.0)
 
 ### Key Architectural Decisions
-After extensive meetings and customer data analysis:
+After extensive meetings, customer data analysis, and algorithm refinement:
 
 **Architecture:**
 - ✅ **ONE master taxonomy** maintained by Propelus (immutable, ~4 updates/year)
 - ✅ **Variable customer taxonomies** - supports both flat lists and hierarchical structures
-- ✅ **N/A Node System (Martin's Approach)** - automatic gap filling for variable-depth hierarchies
+- ✅ **Algorithm v1.0** - Rolling ancestor memory for parent resolution
+- ✅ **Explicit Node Levels** - Numeric indicators (0-N) for variable-depth hierarchies
 - ✅ **Direct mapping**: Customer professions → Master taxonomy (no intermediate layers)
 - ✅ **Request-based**: All interactions tracked with request_id for async operations
 - ✅ **Remapping support**: Historical mappings reprocessed when master taxonomy updates
+- ✅ **Updated Natural Key**: Includes parent_node_id to allow same value under different parents
 
 **Customer Data Variability:**
 Customers provide data in various formats:
@@ -161,60 +170,121 @@ Physician         | Licensed          | Active
 
 ---
 
-## N/A Node System: Variable-Depth Hierarchy Handling
+## Algorithm v1.0: Variable-Depth Hierarchy Handling (October 2024)
 
 ### Problem Statement
-Healthcare taxonomies have inconsistent depths:
-- **Master Taxonomy**: 5 levels (`Healthcare → Medical → Physicians → Family Medicine → FP-CA`)
+Healthcare taxonomies have inconsistent depths and require flexible parent resolution:
+- **Master Taxonomy**: Variable levels (`Healthcare (0) → Behavioral Health (1) → Social Workers (2) → Clinical SW (3) → Advanced CSW (5)`) - skips level 4
 - **Customer A**: 2 levels (`Social Worker → Associate`) - skips intermediate levels
 - **Customer B**: Flat list (no hierarchy)
+- **Requirement**: Same value (e.g., "Associate") can exist under different parents
 
-### Solution: N/A Placeholder Nodes (Martin's Approach - Oct 8, 2024)
+### Solution: Algorithm v1.0 (Oct 14, 2024)
 
-**Core Concept**: When taxonomies skip hierarchy levels, automatically insert N/A placeholder nodes (node_type_id = -1) to maintain structural consistency.
+**Core Concepts**:
+
+1. **Explicit Node Levels**: Each node has explicit numeric level (0-N)
+   - Excel headers: `Industry (node 0)`, `Major Group (node 1)`, `Profession (node 5)`
+   - API payload: `NodeLevels: [{ level: 0, name: "Industry" }, ...]`
+   - Allows variable depth with gaps (e.g., 0, 1, 2, 5 - skipping 3, 4)
+
+2. **Rolling Ancestor Memory**: Parent resolution across rows
+   - Maintains `last_seen[level] = node_id` state
+   - Each row creates exactly ONE node at ONE explicit level
+   - Parent = nearest realized lower-level ancestor
+   - Example:
+     ```
+     Row 1: "Healthcare" at level 0 → parent = NULL, last_seen[0] = Healthcare
+     Row 2: "Behavioral Health" at level 1 → parent = last_seen[0], last_seen[1] = Behavioral Health
+     Row 3: "Social Workers" at level 2 → parent = last_seen[1], last_seen[2] = Social Workers
+     ```
+
+3. **Updated Natural Key**: Includes parent_node_id
+   - Old: `(taxonomy_id, node_type_id, customer_id, LOWER(value))`
+   - New: `(taxonomy_id, node_type_id, customer_id, parent_node_id, LOWER(value))`
+   - Enables: "Associate" under both "Social Worker" and "Nurse" as distinct nodes
+
+4. **Profession Column**: Separate from hierarchy
+   - Excel: `Taxonomy Description (Profession)`
+   - API: `layout.ProfessionColumn = "Profession Name"`
+   - Stored on node but not used as hierarchical level
 
 **Example**:
 ```
-Input CSV:
-  Level 1: Social Worker
-  Level 2: [empty]
-  Level 3: Associate
+Input Excel (processed row-by-row):
+  Row 1: "Healthcare" at level 0 (empty cells at levels 1-5)
+  Row 2: "Behavioral Health" at level 1 (empty at 0, 2-5)
+  Row 3: "Social Workers" at level 2 (empty at 0, 1, 3-5)
+  Row 4: "Clinical Social Workers" at level 3 (empty at 0-2, 4-5)
+  Row 5: "Advanced Clinical SW" at level 5 (empty at 0-4) - SKIPS level 4
 
 Stored in Database:
-  Level 1: Social Worker (real node)
-  Level 2: N/A (placeholder, node_type_id = -1)
-  Level 3: Associate (real node)
+  Level 0: Healthcare (parent = NULL)
+  Level 1: Behavioral Health (parent = Healthcare)
+  Level 2: Social Workers (parent = Behavioral Health)
+  Level 3: Clinical Social Workers (parent = Social Workers)
+  Level 5: Advanced Clinical SW (parent = Clinical Social Workers) - NO level 4 node needed
 ```
 
-### Implementation Components
+### Implementation Components (v1.0)
 
 **Database Layer**:
 - **Migration 001**: N/A node type with reserved ID (-1)
-- **Migration 002**: 7 SQL helper functions
-  - `get_node_full_path()` - includes N/A for LLM context
-  - `get_node_display_path()` - excludes N/A for UI
-  - `get_active_children()` - excludes N/A from navigation
-  - Plus: `is_na_node()`, `count_na_nodes_in_path()`, `get_node_ancestors()`, `get_node_path_with_levels()`
+- **Migration 002**: 7 SQL helper functions for hierarchy operations
+- **Migration 003**: Updated natural key constraint (includes parent_node_id) ⭐ **NEW**
+  - Drops old unique constraint
+  - Creates new constraint: `(taxonomy_id, node_type_id, customer_id, parent_node_id, LOWER(value))`
+  - Adds indexes for parent queries and root nodes
+  - Handles duplicate rows automatically
 
-**TypeScript Classes**:
-- **NANodeHandler**: Creates/manages N/A placeholder nodes
-  - `getOrCreateParentNode()` - automatic gap filling
-  - `findOrCreateNANode()` - idempotent N/A creation
-  - `createNAChain()` - fills multiple consecutive gaps
-- **HierarchyQueries**: N/A-aware query wrappers
-  - `getFullPath()` - includes N/A for LLM
-  - `getDisplayPath()` - filters N/A for display
-  - `formatPathForLLM()` - adds `[SKIP]` markers
+**TypeScript Classes (v1.0)**:
+- **RollingAncestorResolver** ⭐ **NEW**: State management for parent resolution
+  - `resolveParent(level, rowValues)` - finds nearest realized lower-level ancestor
+  - `updateMemory(level, nodeId)` - updates last_seen[level] state
+  - `isNAValue(value)` - checks for empty/N/A values
+  - `reset()` - clears state for testing
+- **Layout Parser (v1.0)**:
+  - Parses `(node N)` syntax for explicit levels
+  - Detects `(Profession)` column marker
+  - Builds `NodeLevels` array with level-to-name mapping
+  - Validates and sorts by level number
+- **Filename Parser (v1.0)**:
+  - New regex: `^(Master|Customer)\s+(-?\d+)\s+(-?\d+)(?:\s+.+)?(?:\.xlsx)?$`
+  - Extracts taxonomy_type, customer_id, taxonomy_id
+  - Sheet name used as taxonomy_name
+- **Row Processor (v1.0)**:
+  - Complete rewrite for single-node-per-row logic
+  - Uses RollingAncestorResolver for parent resolution
+  - Processes rows in file order
+  - Supports multi-valued cells (creates siblings)
 
-### Lambda Integration
+### Lambda Integration (v1.0)
 
-**Ingestion Lambda**:
+**Ingestion Lambda (v1.0)**:
 ```typescript
-// Automatically creates N/A nodes when CSV has gaps
-const naHandler = new NANodeHandler(pool);
-const parentId = await naHandler.getOrCreateParentNode(
-  taxonomyId, targetLevel, semanticParentId, semanticParentLevel
-);
+// Initialize rolling ancestor resolver
+const ancestorResolver = new RollingAncestorResolver(client);
+
+// Process rows in file order
+for (const srcRow of rows) {
+  // Extract node level and value from row
+  const nodeLevel = determineLevel(srcRow, layout);
+  const nodeValue = extractNodeValue(srcRow, nodeLevel);
+
+  // Resolve parent using rolling memory
+  const rowValues = buildRowValuesMap(srcRow, layout);
+  const parentId = ancestorResolver.resolveParent(nodeLevel.level, rowValues);
+
+  // Create node with explicit level and resolved parent
+  const nodeId = await upsertNode(client, loadType, {
+    ...params,
+    parent_node_id: parentId,
+    level: nodeLevel.level
+  });
+
+  // Update rolling memory
+  ancestorResolver.updateMemory(nodeLevel.level, nodeId);
+}
 ```
 
 **Mapping Lambda**:
@@ -222,7 +292,7 @@ const parentId = await naHandler.getOrCreateParentNode(
 // Include hierarchy in AI prompts
 const fullPath = await hierarchyQueries.getFullPath(nodeId);
 const llmPrompt = hierarchyQueries.formatPathForLLM(fullPath);
-// Result: "L1:Healthcare → [SKIP]:N/A → L3:Nurse"
+// Result: "L0:Healthcare → L1:Behavioral Health → L2:Social Workers"
 
 // Filter N/A from matching candidates
 WHERE node_type_id != -1
@@ -230,9 +300,9 @@ WHERE node_type_id != -1
 
 **Translation Lambda**:
 ```typescript
-// Return N/A-filtered display paths
+// Return N/A-filtered display paths with explicit levels
 const displayPath = await hierarchyQueries.getDisplayPath(nodeId);
-// Result: "Healthcare → Nurse" (N/A removed)
+// Result: "Healthcare → Behavioral Health → Social Workers"
 ```
 
 ### Dual Display Strategy

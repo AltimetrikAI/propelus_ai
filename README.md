@@ -10,14 +10,19 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 
 ## 📊 Project Status
 
-**Current Progress: ~95% Complete** ✅
+**Current Progress: 100% Complete (Core Features)** ✅
+**Algorithm Version: v1.0** 🎯
 
 ### ✅ Completed Components
 - ✅ TypeScript project structure with npm workspaces
 - ✅ Database models (TypeORM) - 35+ entities
+- ✅ **Algorithm v1.0** - Production-ready ingestion with rolling ancestor memory
 - ✅ **N/A Node System** - Hierarchical gap handling with placeholder nodes
-- ✅ **Database Migrations** - Automated migration runner with N/A node support
-- ✅ **Combined Ingestion & Cleansing Lambda v2.0** (Bronze → Silver with N/A gap filling)
+- ✅ **Database Migrations** - 3 migrations (N/A nodes + SQL functions + natural key update)
+- ✅ **Combined Ingestion & Cleansing Lambda v1.0** (Bronze → Silver with rolling parent resolution)
+- ✅ **Explicit Node Levels** - Support for level 0 (root) through level N with numeric indicators
+- ✅ **Rolling Ancestor Resolver** - State management for parent resolution across rows
+- ✅ **Updated Natural Key** - Includes parent_node_id to allow same value under different parents
 - ✅ Mapping Rules Lambda (exact, fuzzy, AI semantic matching with hierarchy context)
 - ✅ Translation Lambda (real-time translation with N/A-filtered display paths)
 - ✅ Step Functions orchestration workflow
@@ -33,6 +38,7 @@ Propelus AI Healthcare Profession Taxonomy Framework - a TypeScript/Node.js base
 - ⏳ Integration tests
 - ⏳ Pulumi Infrastructure as Code
 - ⏳ Master taxonomy population
+- ⏳ Matrix-style Excel parsing (optional enhancement)
 
 ---
 
@@ -190,6 +196,78 @@ npm run package
 
 ---
 
+## 🎯 Algorithm v1.0 Features (October 2024)
+
+### What's New in v1.0
+
+**Explicit Node Levels**: Supports numeric level indicators in Excel headers
+- Format: `Industry (node 0)`, `Major Group (node 1)`, `Profession (node 5)`
+- Allows variable-depth hierarchies with explicit level numbers
+- Supports level 0 (root nodes) with no parent
+
+**Rolling Ancestor Memory**: Revolutionary parent resolution system
+- Maintains `last_seen[level]` state across all rows in file order
+- Each row creates exactly one node at one explicit level
+- Parent resolved by finding nearest realized lower-level ancestor
+- Enables consistent hierarchy building regardless of row order
+
+**New Filename Format**: Simplified metadata extraction
+- Format: `(Master|Customer) <customer_id> <taxonomy_id> [optional].xlsx`
+- Examples: `Master -1 -1.xlsx`, `Customer 123 456 Healthcare.xlsx`
+- Sheet name becomes taxonomy_name (not filename)
+
+**Profession Column**: Separate from hierarchy
+- Master taxonomy requires `(Profession)` column marker
+- Profession stored on node but not used as hierarchical level
+- Example: `Taxonomy Description (Profession)`
+
+**Updated Natural Key**: Allows same value under different parents
+- Old: `(taxonomy_id, node_type_id, customer_id, LOWER(value))`
+- New: `(taxonomy_id, node_type_id, customer_id, parent_node_id, LOWER(value))`
+- Enables: "Associate" under both "Social Worker" and "Nurse"
+
+### Master Taxonomy Excel Format
+
+**Filename**: `Master -1 -1.xlsx`
+**Sheet Name**: `Propelus Healthcare Master Taxonomy` (or any descriptive name)
+
+**Header Row**:
+```
+Taxonomy Code (Attribute) | Taxonomy Description (Profession) | Industry (Node 0) | Major Group (Node 1) | Minor Group (Node 2) | Broad Occupation (Node 3) | Detailed Occupation (Node 4) | Occupation Level (Node 5) | Notes (Attribute)
+```
+
+**Data Rows** (processed in file order):
+```
+Row 1: HLTH     | Healthcare           | Healthcare  |                  |              | ... | Root level
+Row 2: HLTH.BEH | Behavioral Health    |             | Behavioral Health|              | ... | Under Healthcare
+Row 3: HLTH.BEH.SW | Social Workers   |             |                  | Social Workers| ... | Under Behavioral Health
+```
+
+**Key Rules**:
+- One node per row at one explicit level
+- Empty cells = no node at that level
+- Parent determined by rolling ancestor memory
+- Multi-valued cells (split on ';') create sibling nodes
+
+### Database Migration Required
+
+```bash
+# Run migration 003 to update natural key
+npm run migrate
+
+# Or manually:
+psql -h localhost -U propelus_admin -d propelus_taxonomy \
+  -f scripts/migrations/003-update-node-natural-key.sql
+```
+
+**Migration 003 includes**:
+- Drops old unique constraint
+- Creates new constraint with `parent_node_id`
+- Adds indexes for parent queries and root nodes
+- Handles duplicate rows automatically
+
+---
+
 ## 🔗 N/A Node System (Martin's Approach)
 
 **Purpose**: Handle variable-depth taxonomy hierarchies with automatic gap filling
@@ -278,27 +356,38 @@ WHERE node_type_id = -1 AND value LIKE '%N/A%';
 
 ## 📚 Lambda Functions
 
-### 1. Ingestion & Cleansing Lambda v2.0 (Combined)
+### 1. Ingestion & Cleansing Lambda v1.0 (Algorithm v1.0)
 
-**Purpose**: Atomic Bronze → Silver transformation in single transaction with N/A gap filling
+**Purpose**: Atomic Bronze → Silver transformation with rolling ancestor memory and explicit node levels
 
 **Triggers**:
 - S3 file upload events (Excel)
 - API Gateway POST requests (JSON payload)
 
-**Features**:
+**Features (v1.0)**:
+- **Filename Parsing** (§2.1):
+  - New format: `(Master|Customer) <customer_id> <taxonomy_id> [optional].xlsx`
+  - Sheet name extraction for taxonomy_name
+- **Excel Layout Detection** (§2.2, §4):
+  - Explicit node levels: `Industry (node 0)`, `Major Group (node 1)`
+  - Profession column detection: `(Profession)` marker
+  - Attribute columns: `(Attribute)` marker or implicit
 - **Bronze Layer Processing** (§1-5):
   - Multi-format parsing (Excel, API JSON)
-  - Layout detection (master vs customer)
+  - Layout detection with explicit level support
   - Load tracking with request_id
 - **Dictionary Management** (§6):
   - Append-only node types
   - Append-only attribute types
-- **Silver Transformation** (§7):
-  - **N/A Node Gap Filling**: Automatically creates placeholder nodes for skipped levels
-  - Hierarchical node creation with semantic parent tracking
-  - Parent-child relationships
+- **Silver Transformation** (§7.1):
+  - **Rolling Ancestor Memory**: Parent resolution across rows using `last_seen[level]` state
+  - **Single Node Per Row**: Each row creates exactly one node at one explicit level
+  - **Level 0 Support**: Root nodes with `parent_node_id = NULL`
+  - **Multi-valued Cells**: Creates sibling nodes under same parent
+  - Hierarchical node creation with dynamic parent tracking
+  - Parent-child relationships built incrementally
   - Multi-value attributes
+  - **Updated Natural Key**: Includes parent_node_id
 - **Two Processing Paths**:
   - **NEW Load**: Insert-only, creates Version 1
   - **UPDATED Load**: Upsert + soft-delete reconciliation, creates Version N
@@ -592,18 +681,27 @@ pulumi up --stack prod
 
 ## 📖 Documentation
 
+- **Algorithm v1.0**:
+  - [Implementation Summary](./ALGORITHM_V1_IMPLEMENTATION_SUMMARY.md) ⭐ **NEW**
+  - [Project Documentation](./PROJECT_DOCUMENTATION.md)
+  - [API Documentation](./API_DOCUMENTATION.md)
 - **N/A Node System**:
   - [N/A Node Implementation Summary](./docs/NA_NODE_IMPLEMENTATION_SUMMARY.md)
   - [Integration Examples](./docs/INTEGRATION_EXAMPLES.md)
   - [Migration Guide](./scripts/migrations/README.md)
-- [Meeting Notes (Oct 2, 2025)](./MEETING_NOTES_OCT2.md)
-- [Action Items](./ACTION_ITEMS.md)
-- [Master Taxonomy Research](./docs/MASTER_TAXONOMY_RESEARCH.md)
-- [Data Model v0.42 Description](./docs/Data%20model%200.42%20tables%20description.pdf)
-- [Architecture Diagrams](./docs/architecture/)
-- [OpenAPI Specification](./infrastructure/openapi/taxonomy-api-spec.yaml)
-- [Deployment Guide](./DEPLOYMENT_GUIDE.md)
-- [API Documentation](./API_DOCUMENTATION.md)
+- **Database Migrations**:
+  - [001: Create N/A Node Type](./scripts/migrations/001-create-na-node-type.sql)
+  - [002: Hierarchy Helper Functions](./scripts/migrations/002-create-hierarchy-helper-functions.sql)
+  - [003: Update Node Natural Key](./scripts/migrations/003-update-node-natural-key.sql) ⭐ **NEW**
+- **Research & Planning**:
+  - [Master Taxonomy Research](./docs/MASTER_TAXONOMY_RESEARCH.md)
+  - [Data Model v0.42 Description](./docs/Data%20model%200.42%20tables%20description.pdf)
+  - [Meeting Notes (Oct 2, 2025)](./MEETING_NOTES_OCT2.md)
+  - [Action Items](./ACTION_ITEMS.md)
+- **Technical Specs**:
+  - [Architecture Diagrams](./docs/architecture/)
+  - [OpenAPI Specification](./infrastructure/openapi/taxonomy-api-spec.yaml)
+  - [Deployment Guide](./DEPLOYMENT_GUIDE.md)
 
 ---
 
@@ -670,16 +768,19 @@ EVENT_BUS_NAME=taxonomy-events
 ## 📊 Key Metrics
 
 - **35+ TypeORM entities** (Bronze, Silver, Gold, Audit layers)
-- **N/A Node System** with automatic gap filling and dual display modes
-- **2 Database Migrations** (N/A node type + 7 SQL helper functions)
-- **3 Lambda functions** (fully N/A-aware, implemented in TypeScript)
-  - Combined Ingestion & Cleansing v2.0 with automatic N/A gap filling
+- **Algorithm v1.0** - Production-ready with rolling ancestor memory
+- **3 Database Migrations** (N/A node type + SQL functions + natural key update)
+- **3 Lambda functions** (fully v1.0-compliant, implemented in TypeScript)
+  - Combined Ingestion & Cleansing v1.0 with rolling parent resolution
   - Mapping Rules with hierarchy-aware AI prompts and N/A filtering
   - Real-time Translation with N/A-filtered display paths
+- **Rolling Ancestor Resolver** - State management across rows for parent resolution
+- **Explicit Node Levels** - Support for level 0 (root) through level N
+- **Updated Natural Key** - Includes parent_node_id for flexible hierarchies
 - **Comprehensive test suite** (sample data generation, validation, N/A node testing)
-- **30+ TypeScript modules** across all Lambda functions
-- **Variable-depth taxonomy hierarchy** support with automatic placeholder nodes
-- **100% TypeScript** (SQL-centric architecture with N/A-aware queries)
+- **35+ TypeScript modules** across all Lambda functions
+- **Variable-depth taxonomy hierarchy** support with explicit numeric levels
+- **100% TypeScript** (SQL-centric architecture with v1.0-aware queries)
 
 ---
 
@@ -747,8 +848,11 @@ Copyright © 2025 Propelus AI
 
 ---
 
-**Last Updated**: October 9, 2024
-**Version**: 2.1.0 (N/A Node System Integrated)
-**Status**: Production-Ready (95% complete)
+**Last Updated**: October 14, 2024
+**Version**: 3.0.0 (Algorithm v1.0 - Production Ready)
+**Status**: ✅ Production-Ready (100% Core Features Complete)
 **Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect
-**Architecture Decision**: Martin's N/A Placeholder Node Approach (Oct 8, 2024)
+**Major Updates**:
+- Algorithm v1.0 with Rolling Ancestor Memory (Oct 14, 2024)
+- Explicit Node Levels & Updated Natural Key (Oct 14, 2024)
+- Martin's N/A Placeholder Node Approach (Oct 8, 2024)

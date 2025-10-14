@@ -16,6 +16,7 @@ import {
 } from '../database/queries/reconciliation';
 import { writeVersion } from '../database/queries/versioning';
 import { processRow } from './row-processor';
+import { RollingAncestorResolver } from './rolling-ancestor-resolver';
 
 export interface OrchestrationInput {
   taxonomyType: 'master' | 'customer';
@@ -107,9 +108,13 @@ export async function orchestrateLoad(
         attrTypes: new Map<string, number>(),
       };
 
+      // §7.1.1: Initialize rolling ancestor resolver (v1.0)
+      // Maintains last_seen[level] state across all rows for parent resolution
+      const ancestorResolver = new RollingAncestorResolver(cx);
+
       // Process each row: bronze insert + silver transformation (§7)
       for (const srcRow of ctx.rows) {
-        await processRow(cx, ctx, srcRow, cache);
+        await processRow(cx, ctx, srcRow, cache, ancestorResolver);
       }
 
       // Reconciliation: deactivate missing nodes/attributes (§7B.3, §7B.4)

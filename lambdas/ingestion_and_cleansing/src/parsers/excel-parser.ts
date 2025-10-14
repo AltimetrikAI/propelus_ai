@@ -1,6 +1,6 @@
 /**
- * Excel Parser
- * Reads Excel files from S3 and extracts data
+ * Excel Parser (v1.0)
+ * Reads Excel files from S3 and extracts data with sheet name
  */
 
 import { S3Client, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -11,10 +11,12 @@ import { Readable } from 'stream';
 export interface ExcelData {
   headers: string[];
   rows: any[];
+  sheetName: string; // Added in v1.0 - used as taxonomy_name
 }
 
 /**
- * Read Excel file from S3
+ * Read Excel file from S3 (v1.0)
+ * §2.1: Extract sheet name for taxonomy_name
  */
 export async function readExcelFromS3(bucket: string, key: string): Promise<ExcelData> {
   const s3Client = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
@@ -59,7 +61,11 @@ export async function readExcelFromS3(bucket: string, key: string): Promise<Exce
       return obj;
     });
 
-    return { headers, rows };
+    return {
+      headers,
+      rows,
+      sheetName, // v1.0: Return sheet name to use as taxonomy_name
+    };
   } catch (error: any) {
     throw new Error(`Failed to read Excel from S3: ${error.message}`);
   }
