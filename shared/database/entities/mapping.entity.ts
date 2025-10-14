@@ -174,6 +174,73 @@ export class SilverMappingTaxonomies {
 }
 
 // ============================================
+// TAXONOMY MAPPING VERSIONS
+// ============================================
+
+@Entity('silver_mapping_taxonomies_versions')
+export class SilverMappingTaxonomiesVersions {
+  @PrimaryGeneratedColumn()
+  mapping_version_id!: number;
+
+  @Column()
+  master_taxonomy_id!: number;
+
+  @Column()
+  child_taxonomy_id!: number;
+
+  @Column()
+  mapping_version_number!: number;
+
+  @Column({ length: 255 })
+  change_type!: string; // 'mappings added', 'mappings deleted', 'mappings modified', etc.
+
+  @Column('jsonb', { nullable: true })
+  affected_mappings?: any[]; // List of {mapping_id, master_node_id, child_node_id, change: 'new'|'deleted'|'modified'}
+
+  @Column({ default: false })
+  remapping_flag!: boolean;
+
+  @Column('text', { nullable: true })
+  remapping_reason?: string;
+
+  @Column({ default: 0 })
+  total_mappings_processed!: number;
+
+  @Column({ default: 0 })
+  total_mappings_changed!: number;
+
+  @Column({ default: 0 })
+  total_mappings_unchanged!: number;
+
+  @Column({ default: 0 })
+  total_mappings_failed!: number;
+
+  @Column({ default: 0 })
+  total_mappings_new!: number;
+
+  @Column({ length: 50, nullable: true })
+  remapping_proces_status?: string; // 'in progress', 'completed', 'failed', or NULL
+
+  @Column('text', { nullable: true })
+  version_notes?: string;
+
+  @Column({ type: 'timestamp' })
+  version_from_date!: Date;
+
+  @Column({ type: 'timestamp', nullable: true })
+  version_to_date?: Date;
+
+  @CreateDateColumn()
+  created_at!: Date;
+
+  @UpdateDateColumn()
+  last_updated_at!: Date;
+
+  @Column()
+  load_id!: number; // FK to bronze_load_details
+}
+
+// ============================================
 // PROFESSION MAPPING MODELS
 // ============================================
 

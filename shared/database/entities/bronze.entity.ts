@@ -30,10 +30,29 @@ export class BronzeLoadDetails {
   @CreateDateColumn()
   load_date!: Date;
 
-  @Column({ length: 20 })
-  type!: string; // 'New' or 'Updated'
+  // NEW: October 14, 2024 - Data Engineer Schema Alignment
+  @Column({ type: 'timestamp', nullable: true })
+  load_start?: Date;
 
-  // NEW: September 29, 2025 - Request tracking and async support
+  @Column({ type: 'timestamp', nullable: true })
+  load_end?: Date;
+
+  @Column({ length: 50, default: 'in progress' })
+  load_status!: string; // 'completed', 'partially completed', 'failed', 'in progress'
+
+  @Column({ default: true })
+  load_active_flag!: boolean;
+
+  @Column({ length: 20 })
+  load_type!: string; // 'new' or 'updated'
+
+  @Column({ length: 20 })
+  taxonomy_type!: string; // 'master' or 'customer'
+
+  @Column({ length: 20, nullable: true })
+  type?: string; // Legacy field - kept for backward compatibility
+
+  // Request tracking and async support
   @Column({ length: 100, nullable: true })
   request_id?: string;
 
@@ -50,7 +69,7 @@ export class BronzeLoadDetails {
 @Entity('bronze_taxonomies')
 export class BronzeTaxonomies {
   @PrimaryGeneratedColumn()
-  id!: number;
+  row_id!: number; // Renamed from 'id' per Data Engineer schema spec
 
   @Column()
   customer_id!: number;
@@ -70,7 +89,14 @@ export class BronzeTaxonomies {
   @Column({ nullable: true })
   load_id?: number;
 
-  // NEW: September 29, 2025 - File and request tracking
+  // NEW: October 14, 2024 - Data Engineer Schema Alignment
+  @Column({ length: 50, default: 'in progress' })
+  row_load_status!: string; // 'completed', 'in progress', 'failed'
+
+  @Column({ default: true })
+  row_active_flag!: boolean;
+
+  // File and request tracking
   @Column({ length: 500, nullable: true })
   file_url?: string;
 

@@ -10,8 +10,8 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
-@Entity('gold_taxonomies_mapping')
-export class GoldTaxonomiesMapping {
+@Entity('gold_mapping_taxonomies')
+export class GoldMappingTaxonomies {
   @PrimaryGeneratedColumn()
   mapping_id!: number;
 

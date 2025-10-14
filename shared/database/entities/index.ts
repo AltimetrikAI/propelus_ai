@@ -32,6 +32,7 @@ import {
   SilverTaxonomiesAttributeTypes,
   SilverTaxonomiesNodes,
   SilverTaxonomiesNodesAttributes,
+  SilverTaxonomiesVersions,
   SilverProfessions,
   SilverProfessionsAttributes,
   SilverAttributeTypes,
@@ -43,6 +44,7 @@ import {
   SilverMappingTaxonomiesRules,
   SilverMappingTaxonomiesRulesAssigment,
   SilverMappingTaxonomies,
+  SilverMappingTaxonomiesVersions,
   SilverMappingProfessionsRulesTypes,
   SilverMappingProfessionsRules,
   SilverMappingProfessionsRulesAssignment,
@@ -53,7 +55,7 @@ import {
 } from './mapping.entity';
 
 import {
-  GoldTaxonomiesMapping,
+  GoldMappingTaxonomies,
   GoldMappingProfessions,
   GoldMappingTaxonomiesLog,
 } from './gold.entity';
@@ -85,6 +87,7 @@ export const entities = [
   SilverTaxonomiesAttributeTypes,
   SilverTaxonomiesNodes,
   SilverTaxonomiesNodesAttributes,
+  SilverTaxonomiesVersions,
   SilverProfessions,
   SilverProfessionsAttributes,
   SilverAttributeTypes,
@@ -94,6 +97,7 @@ export const entities = [
   SilverMappingTaxonomiesRules,
   SilverMappingTaxonomiesRulesAssigment,
   SilverMappingTaxonomies,
+  SilverMappingTaxonomiesVersions,
   SilverMappingProfessionsRulesTypes,
   SilverMappingProfessionsRules,
   SilverMappingProfessionsRulesAssignment,
@@ -102,7 +106,7 @@ export const entities = [
   SilverAttributeCombinations,
   SilverTranslationPatterns,
   // Gold
-  GoldTaxonomiesMapping,
+  GoldMappingTaxonomies,
   GoldMappingProfessions,
   GoldMappingTaxonomiesLog,
   // Audit
