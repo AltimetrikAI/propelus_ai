@@ -10,6 +10,7 @@ import { AppDataSource } from '../../../shared/database/connection';
 import { logger } from '../../../shared/utils/logger';
 import { MappingEngine } from './services/mapping-engine';
 import { EventBridgeClient, PutEventsCommand } from '@aws-sdk/client-eventbridge';
+import { Pool } from 'pg';
 
 interface LambdaResponse {
   statusCode: number;
@@ -17,10 +18,32 @@ interface LambdaResponse {
 }
 
 let isInitialized = false;
+let pool: Pool;
 
 async function initializeDatabase(): Promise<void> {
   if (!isInitialized) {
     await AppDataSource.initialize();
+
+    // Create PostgreSQL pool for NLP matcher
+    pool = new Pool({
+      host: process.env.PGHOST,
+      port: parseInt(process.env.PGPORT || '5432'),
+      database: process.env.PGDATABASE,
+      user: process.env.PGUSER,
+      password: process.env.PGPASSWORD,
+      ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false,
+      max: 2,
+    });
+
+    // Set search_path
+    pool.on('connect', async (client) => {
+      try {
+        await client.query(`SET search_path = ${process.env.PGSCHEMA || 'taxonomy_schema'}, public`);
+      } catch (err) {
+        logger.error('Error setting search_path', { error: err });
+      }
+    });
+
     isInitialized = true;
     logger.info('Database connection initialized');
   }
@@ -39,7 +62,7 @@ export async function handler(event: SQSEvent, context: Context): Promise<Lambda
   try {
     await initializeDatabase();
 
-    const mappingEngine = new MappingEngine();
+    const mappingEngine = new MappingEngine(pool);
     const results = [];
 
     for (const record of event.Records) {

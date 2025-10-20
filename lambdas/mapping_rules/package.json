@@ -18,7 +18,8 @@
     "pg": "^8.11.3",
     "reflect-metadata": "^0.1.13",
     "string-similarity": "^4.0.4",
-    "leven": "^4.0.0"
+    "leven": "^4.0.0",
+    "compromise": "^14.10.0"
   },
   "devDependencies": {
     "@types/aws-lambda": "^8.10.130",

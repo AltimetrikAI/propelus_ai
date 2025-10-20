@@ -3,8 +3,9 @@
  *
  * Orchestrates mapping process using multiple strategies:
  * 1. Exact matching
- * 2. Fuzzy matching (Levenshtein distance)
- * 3. AI semantic matching (Bedrock)
+ * 2. NLP Qualifier matching (qualifier-aware patterns)
+ * 3. Fuzzy matching (Levenshtein distance)
+ * 4. AI semantic matching (Bedrock)
  */
 
 import { AppDataSource } from '../../../../shared/database/connection';
@@ -16,14 +17,17 @@ import {
   SilverMappingTaxonomiesRules,
 } from '../../../../shared/database/entities/mapping.entity';
 import { ExactMatcher } from '../matchers/exact-matcher';
+import { NLPQualifierMatcher } from '../matchers/nlp-qualifier-matcher';
 import { FuzzyMatcher } from '../matchers/fuzzy-matcher';
 import { AISemanticMatcher } from '../matchers/ai-semantic-matcher';
+import { Pool } from 'pg';
 
 export interface MappingResult {
   totalNodes: number;
   mappedNodes: number;
   unmappedNodes: number;
   exactMatches: number;
+  nlpMatches: number;
   fuzzyMatches: number;
   aiMatches: number;
   lowConfidenceMatches: number;
@@ -33,17 +37,21 @@ export interface MappingDecision {
   masterNodeId: number;
   childNodeId: number;
   confidence: number;
-  matchType: 'exact' | 'fuzzy' | 'ai_semantic';
+  matchType: 'exact' | 'nlp_qualifier' | 'fuzzy' | 'ai_semantic';
   ruleId: number;
 }
 
 export class MappingEngine {
   private exactMatcher: ExactMatcher;
+  private nlpMatcher: NLPQualifierMatcher;
   private fuzzyMatcher: FuzzyMatcher;
   private aiMatcher: AISemanticMatcher;
+  private pool: Pool;
 
-  constructor() {
+  constructor(pool: Pool) {
+    this.pool = pool;
     this.exactMatcher = new ExactMatcher();
+    this.nlpMatcher = new NLPQualifierMatcher(pool);
     this.fuzzyMatcher = new FuzzyMatcher();
     this.aiMatcher = new AISemanticMatcher();
   }
@@ -63,6 +71,7 @@ export class MappingEngine {
       mappedNodes: 0,
       unmappedNodes: 0,
       exactMatches: 0,
+      nlpMatches: 0,
       fuzzyMatches: 0,
       aiMatches: 0,
       lowConfidenceMatches: 0,
@@ -80,6 +89,12 @@ export class MappingEngine {
 
       logger.info(`Found ${masterNodes.length} master taxonomy nodes`);
 
+      // Initialize NLP matcher with master taxonomy
+      const masterTaxonomyId = masterNodes[0]?.taxonomy_id;
+      if (masterTaxonomyId) {
+        await this.nlpMatcher.initialize(masterTaxonomyId);
+      }
+
       for (const childNode of nodesToMap) {
         try {
           // Try exact match first
@@ -88,17 +103,39 @@ export class MappingEngine {
           if (mappingDecision) {
             result.exactMatches++;
           } else {
-            // Try fuzzy match
-            mappingDecision = await this.fuzzyMatcher.findMatch(childNode, masterNodes);
+            // Try NLP qualifier match
+            const nlpResult = await this.nlpMatcher.match(
+              childNode.value,
+              masterNodes.map(n => ({
+                node_id: n.node_id,
+                value: n.value,
+                level: n.level,
+                taxonomy_id: n.taxonomy_id
+              }))
+            );
 
-            if (mappingDecision && mappingDecision.confidence >= 0.7) {
-              result.fuzzyMatches++;
+            if (nlpResult.matched) {
+              mappingDecision = {
+                masterNodeId: nlpResult.master_node_id!,
+                childNodeId: childNode.node_id,
+                confidence: nlpResult.confidence / 100, // Convert to 0-1 scale
+                matchType: 'nlp_qualifier',
+                ruleId: 0, // NLP matcher doesn't use specific rule ID
+              };
+              result.nlpMatches++;
             } else {
-              // Try AI semantic match
-              mappingDecision = await this.aiMatcher.findMatch(childNode, masterNodes);
+              // Try fuzzy match
+              mappingDecision = await this.fuzzyMatcher.findMatch(childNode, masterNodes);
 
-              if (mappingDecision) {
-                result.aiMatches++;
+              if (mappingDecision && mappingDecision.confidence >= 0.7) {
+                result.fuzzyMatches++;
+              } else {
+                // Try AI semantic match
+                mappingDecision = await this.aiMatcher.findMatch(childNode, masterNodes);
+
+                if (mappingDecision) {
+                  result.aiMatches++;
+                }
               }
             }
           }

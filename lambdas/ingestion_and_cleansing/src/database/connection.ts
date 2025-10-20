@@ -12,8 +12,8 @@ export function createDatabasePool(): Pool {
   const config: PoolConfig = {
     host: process.env.PGHOST || 'localhost',
     port: parseInt(process.env.PGPORT || '5432', 10),
-    database: process.env.PGDATABASE || 'propelus_taxonomy',
-    user: process.env.PGUSER || 'postgres',
+    database: process.env.PGDATABASE || 'taxonomy',
+    user: process.env.PGUSER || 'lambda_user',
     password: process.env.PGPASSWORD,
     ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false,
     max: 2, // Lambda: low connection count, scales via concurrent executions
@@ -21,7 +21,19 @@ export function createDatabasePool(): Pool {
     connectionTimeoutMillis: 10000,
   };
 
-  return new Pool(config);
+  // Set search_path to use taxonomy_schema
+  const pool = new Pool(config);
+
+  // Execute SET search_path on each new connection
+  pool.on('connect', async (client) => {
+    try {
+      await client.query(`SET search_path = ${process.env.PGSCHEMA || 'taxonomy_schema'}, public`);
+    } catch (err) {
+      console.error('Error setting search_path:', err);
+    }
+  });
+
+  return pool;
 }
 
 /**
