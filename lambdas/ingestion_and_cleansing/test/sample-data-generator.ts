@@ -168,21 +168,21 @@ export const sampleS3Events = {
   masterSocialWork: {
     source: 's3' as const,
     taxonomyType: 'master' as const,
-    bucket: 'propelus-taxonomy-uploads',
+    bucket: 'propelus-taxononomy-s3',
     key: 'customer--1__taxonomy--1__master-social-work.xlsx'
   },
 
   masterNursePractitioners: {
     source: 's3' as const,
     taxonomyType: 'master' as const,
-    bucket: 'propelus-taxonomy-uploads',
+    bucket: 'propelus-taxononomy-s3',
     key: 'customer--1__taxonomy--1__master-nurse-practitioners.xlsx'
   },
 
   customerHospitalA: {
     source: 's3' as const,
     taxonomyType: 'customer' as const,
-    bucket: 'propelus-taxonomy-uploads',
+    bucket: 'propelus-taxononomy-s3',
     key: 'customer-100__taxonomy-200__hospital-a-professions.xlsx'
   }
 };

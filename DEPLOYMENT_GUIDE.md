@@ -276,16 +276,16 @@ aws lambda create-function \
 
 ```bash
 # Create bucket for taxonomy uploads
-aws s3 mb s3://propelus-taxonomy-uploads-prod
+aws s3 mb s3://propelus-taxononomy-s3
 
 # Enable versioning
 aws s3api put-bucket-versioning \
-  --bucket propelus-taxonomy-uploads-prod \
+  --bucket propelus-taxononomy-s3 \
   --versioning-configuration Status=Enabled
 
 # Configure lifecycle policy (optional)
 aws s3api put-bucket-lifecycle-configuration \
-  --bucket propelus-taxonomy-uploads-prod \
+  --bucket propelus-taxononomy-s3 \
   --lifecycle-configuration file://s3-lifecycle.json
 ```
 
@@ -298,11 +298,11 @@ aws lambda add-permission \
   --statement-id s3-trigger \
   --action lambda:InvokeFunction \
   --principal s3.amazonaws.com \
-  --source-arn arn:aws:s3:::propelus-taxonomy-uploads-prod
+  --source-arn arn:aws:s3:::propelus-taxononomy-s3
 
 # Configure S3 notification
 aws s3api put-bucket-notification-configuration \
-  --bucket propelus-taxonomy-uploads-prod \
+  --bucket propelus-taxononomy-s3 \
   --notification-configuration file://s3-notification.json
 ```
 
@@ -375,7 +375,7 @@ WHERE r.AI_mapping_flag = false;
 
 ```bash
 # Upload master taxonomy Excel file
-aws s3 cp Master_-1_-1.xlsx s3://propelus-taxonomy-uploads-prod/
+aws s3 cp Master_-1_-1.xlsx s3://propelus-taxononomy-s3/
 
 # Or trigger via API
 curl -X POST https://api.propelus.ai/v1/ingest \

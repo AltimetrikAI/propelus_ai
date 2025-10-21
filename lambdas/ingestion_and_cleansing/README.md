@@ -60,7 +60,7 @@ src/
 {
   "source": "s3",
   "taxonomyType": "master",
-  "bucket": "propelus-taxonomy-uploads",
+  "bucket": "propelus-taxononomy-s3",
   "key": "customer-123__taxonomy-456__master.xlsx"
 }
 ```
