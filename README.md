@@ -8,7 +8,6 @@ The Propelus AI Healthcare Profession Taxonomy Framework is a TypeScript/Node.js
 
 **Version**: 4.1.0
 **Status**: Production Ready
-**Last Updated**: January 21, 2025
 
 ### Recent Changes (v4.1.0)
 - **Customer ID Format**: Changed from integer to string (VARCHAR 255) to support subsystem identifiers (e.g., `evercheck-719`)
@@ -350,6 +349,5 @@ Copyright © 2025 Propelus AI
 
 ---
 
-**Last Updated**: January 21, 2025
 **Version**: 4.1.0
 **Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect
