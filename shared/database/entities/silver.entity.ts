@@ -22,11 +22,14 @@ export class SilverTaxonomies {
   @PrimaryGeneratedColumn()
   taxonomy_id!: number;
 
-  @Column({ nullable: true })
-  customer_id?: number;
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  customer_id?: string;
 
   @Column({ length: 255 })
   name!: string;
+
+  @Column('text', { nullable: true })
+  description?: string;
 
   @Column({ length: 20 })
   type!: string; // 'master' or 'customer'
@@ -291,8 +294,8 @@ export class SilverProfessions {
   @PrimaryGeneratedColumn()
   profession_id!: number;
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column({ length: 500 })
   name!: string;

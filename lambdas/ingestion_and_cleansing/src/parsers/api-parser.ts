@@ -10,8 +10,31 @@ export interface ApiData {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
+  description?: string;
   layout: Layout;
   rows: any[];
+}
+
+export interface ApiExtractedData {
+  customerId: string;
+  taxonomyId: string;
+  taxonomyName?: string;
+  description?: string;
+  rows: any[];
+}
+
+/**
+ * Extract IDs and data from API payload
+ * Supports nested and flat structures
+ */
+export function extractApiIds(payload: any): ApiExtractedData {
+  return {
+    customerId: payload.customer_id || payload.customerId,
+    taxonomyId: payload.taxonomy_id || payload.taxonomyId,
+    taxonomyName: payload.taxonomy_name || payload.taxonomyName,
+    description: payload.description,
+    rows: payload.rows || [],
+  };
 }
 
 /**

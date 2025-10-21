@@ -66,6 +66,7 @@ export const handler = async (event: LambdaEvent, context?: any) => {
       customerId: processorResult.customerId,
       taxonomyId: processorResult.taxonomyId,
       taxonomyName: processorResult.taxonomyName,
+      description: processorResult.description,
       rows: processorResult.rows,
       layout: processorResult.layout,
       sourceType: event.source,

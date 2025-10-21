@@ -6,8 +6,15 @@ The Propelus AI Healthcare Profession Taxonomy Framework is a TypeScript/Node.js
 
 **Technology Stack**: TypeScript, Node.js 20+, TypeORM, AWS Lambda, PostgreSQL (Aurora), AWS Bedrock
 
-**Version**: 4.0.0
+**Version**: 4.1.0
 **Status**: Production Ready
+**Last Updated**: January 21, 2025
+
+### Recent Changes (v4.1.0)
+- **Customer ID Format**: Changed from integer to string (VARCHAR 255) to support subsystem identifiers (e.g., `evercheck-719`)
+- **Taxonomy Descriptions**: Added optional description field for human-friendly taxonomy names
+- **Auto-Detection**: System automatically detects new vs updated taxonomies (no manual flag required)
+- **Enhanced API Contracts**: Updated OpenAPI spec (v1.1.0) with improved request/response schemas
 
 ---
 
@@ -50,7 +57,7 @@ Propelus_AI/
 │   └── translation/                    # Real-time translation
 │
 ├── data/
-│   ├── migrations/                     # Database migrations (001-025)
+│   ├── migrations/                     # Database migrations (001-026)
 │   └── production/                     # Production deployment scripts
 │
 ├── docs/                               # Documentation
@@ -208,14 +215,31 @@ REDIS_PORT=6379
 
 ---
 
+## Customer Identifiers
+
+**Format**: `subsystem-clientid` (VARCHAR 255)
+
+The system uses string-based customer identifiers to support multiple client subsystems with their own naming conventions.
+
+**Examples**:
+- `evercheck-719` - EverCheck customer ID 719
+- `datasolutions-123` - DataSolutions customer ID 123
+- `cebroker-456` - CE Broker customer ID 456
+
+**Pattern**: Lowercase alphanumeric with hyphen separator (`^[a-z0-9]+-[a-z0-9]+$`)
+
+This allows each subsystem (EverCheck, DataSolutions, CE Broker) to maintain their own customer identification scheme while ensuring global uniqueness across the taxonomy service.
+
+---
+
 ## API Endpoints
 
-**Specification**: `infrastructure/openapi/taxonomy-api-spec.yaml` (OpenAPI 3.0)
+**Specification**: `infrastructure/openapi/taxonomy-api-spec.yaml` (OpenAPI 3.1)
 
 ### Core Endpoints
 
 ```
-POST   /v1/ingest          - Ingest taxonomy data
+POST   /v1/ingest          - Ingest taxonomy data (full reload)
 POST   /v1/translate       - Translate profession code
 GET    /v1/taxonomies      - List taxonomies
 GET    /v1/taxonomies/{id} - Get taxonomy details
@@ -326,6 +350,6 @@ Copyright © 2025 Propelus AI
 
 ---
 
-**Last Updated**: January 26, 2025
-**Version**: 4.0.0
+**Last Updated**: January 21, 2025
+**Version**: 4.1.0
 **Lead Engineer**: Douglas Martins, Senior AI Engineer/Architect

@@ -60,7 +60,7 @@ export class MappingEngine {
    * Process mappings for a customer taxonomy
    */
   async processMappings(
-    customerId: number,
+    customerId: string,  // Updated to string (VARCHAR 255) - v4.1.0
     taxonomyId: number,
     nodeIds?: number[]
   ): Promise<MappingResult> {

@@ -25,6 +25,7 @@ export interface ApiEvent {
     customer_id: string;
     taxonomy_id: string;
     taxonomy_name: string;
+    description?: string;  // Optional human-friendly description
     layout: any;  // LayoutMaster | LayoutCustomer
     rows: any[];
   };

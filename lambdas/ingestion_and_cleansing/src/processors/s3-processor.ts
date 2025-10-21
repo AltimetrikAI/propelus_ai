@@ -11,6 +11,7 @@ export interface S3ProcessorResult {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
+  description?: string;
   rows: any[];
   layout: Layout;
 }

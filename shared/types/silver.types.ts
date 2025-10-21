@@ -1,7 +1,8 @@
 /**
  * Silver Layer TypeScript Types
- * Updated: January 26, 2025
- * Matches database schema after migrations 015-023
+ * Updated: January 21, 2025
+ * Matches database schema after migrations 015-023, 026
+ * Migration 026: customer_id changed from number to string (VARCHAR(255))
  */
 
 /**
@@ -23,8 +24,9 @@ export type RemappingProcessStatus = 'in progress' | 'completed' | 'failed' | nu
  */
 export interface SilverTaxonomy {
   taxonomy_id: number;
-  customer_id: number;
+  customer_id: string;
   name: string;
+  description?: string;
   type: 'master' | 'customer';
   status: SilverStatus;
   created_at: Date;

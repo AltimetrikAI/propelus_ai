@@ -1,4 +1,4 @@
-# Database Schema Updates - Migrations 013-025
+# Database Schema Updates - Migrations 013-026
 
 ## Overview
 
@@ -29,9 +29,12 @@ This document describes the database migrations created to implement the data en
 ### Gold Layer
 - **024_create_gold_mapping_taxonomies.sql** - Creates Gold mapping table with sync views and functions
 
+### Customer Identifier Updates (January 21, 2025)
+- **026_customer_id_to_varchar.sql** - Changes customer_id from BIGINT to VARCHAR(255) to support subsystem identifiers (e.g., "evercheck-719", "datasolutions-123")
+
 ## Execution Order
 
-**IMPORTANT**: Run migrations in numerical order (013 through 025)
+**IMPORTANT**: Run migrations in numerical order (013 through 026)
 
 ```bash
 # From the project root
@@ -51,6 +54,7 @@ psql -h localhost -U propelus_admin -d propelus_taxonomy -f data/migrations/022_
 psql -h localhost -U propelus_admin -d propelus_taxonomy -f data/migrations/023_silver_mapping_taxonomies_updates.sql
 psql -h localhost -U propelus_admin -d propelus_taxonomy -f data/migrations/024_create_gold_mapping_taxonomies.sql
 psql -h localhost -U propelus_admin -d propelus_taxonomy -f data/migrations/025_add_confidence_column.sql
+psql -h localhost -U propelus_admin -d propelus_taxonomy -f data/migrations/026_customer_id_to_varchar.sql
 ```
 
 ## Key Changes Summary

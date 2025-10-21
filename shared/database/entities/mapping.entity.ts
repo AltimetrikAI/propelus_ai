@@ -421,8 +421,8 @@ export class SilverAttributeCombinations {
   @PrimaryGeneratedColumn()
   combination_id!: number;
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column({ length: 2, nullable: true })
   state_code?: string;

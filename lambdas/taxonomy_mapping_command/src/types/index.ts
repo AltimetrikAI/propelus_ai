@@ -12,7 +12,7 @@
  */
 export interface MappingCommandEvent {
   load_id: number;
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   load_type: 'new' | 'update';
   taxonomy_type: 'master' | 'customer';
@@ -151,7 +151,7 @@ export interface TaxonomyChanges {
 export interface MappingCommandResponse {
   success: boolean;
   load_id: number;
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   results: {
     nodes_processed: number;

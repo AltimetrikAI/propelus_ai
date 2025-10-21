@@ -1,8 +1,16 @@
 openapi: 3.0.3
 info:
   title: Propelus Taxonomy API
-  description: Healthcare profession taxonomy normalization and translation API
-  version: 1.0.0
+  description: |
+    Healthcare profession taxonomy normalization and translation API
+
+    **Updated**: January 21, 2025
+    **Changes**:
+    - customer_id changed from integer to string (format: subsystem-clientid)
+    - Added description field to taxonomies
+    - Auto-detect new vs updated taxonomies (no manual flag required)
+    - Enhanced column structure definition for master vs customer taxonomies
+  version: 1.1.0
   contact:
     name: Propelus AI Team
     email: support@propelus.ai
@@ -30,30 +38,20 @@ paths:
     post:
       tags:
         - Ingestion
-      summary: Ingest taxonomy data
-      description: Upload taxonomy data for processing (CSV, JSON, Excel)
+      summary: Ingest taxonomy data (full reload)
+      description: |
+        Upload complete taxonomy data for processing. Supports both master and customer taxonomies.
+        System auto-detects if taxonomy is new or updated based on existing records.
+
+        **Master Taxonomy**: Requires hierarchical node structure with levels
+        **Customer Taxonomy**: Requires profession column only, all other columns treated as attributes
       operationId: ingestData
       requestBody:
         required: true
         content:
-          multipart/form-data:
+          application/json:
             schema:
-              type: object
-              properties:
-                file:
-                  type: string
-                  format: binary
-                  description: File containing taxonomy data
-                customer_id:
-                  type: integer
-                  description: Customer identifier
-                taxonomy_id:
-                  type: integer
-                  description: Taxonomy identifier
-                type:
-                  type: string
-                  enum: [new, updated]
-                  description: Data type
+              $ref: '#/components/schemas/IngestionRequest'
       responses:
         '200':
           description: Ingestion initiated successfully
@@ -104,7 +102,7 @@ paths:
         - name: customer_id
           in: query
           schema:
-            type: integer
+            type: string
         - name: type
           in: query
           schema:
@@ -161,7 +159,7 @@ paths:
         - name: customer_id
           in: query
           schema:
-            type: integer
+            type: string
         - name: taxonomy_id
           in: query
           schema:
@@ -219,17 +217,110 @@ paths:
 
 components:
   schemas:
+    IngestionRequest:
+      type: object
+      required:
+        - customer_id
+        - taxonomy_type
+        - file_name
+      properties:
+        customer_id:
+          type: string
+          description: |
+            Customer identifier in format: subsystem-clientid
+            Examples: "evercheck-719", "datasolutions-123", "cebroker-456"
+          pattern: '^[a-z0-9]+-[a-z0-9]+$'
+          example: "evercheck-719"
+        taxonomy_id:
+          type: integer
+          description: |
+            Taxonomy identifier (optional for new taxonomies, auto-generated if not provided)
+          example: 456
+        taxonomy_name:
+          type: string
+          description: Human-friendly taxonomy name (optional)
+          example: "ABC Hospital Professions 2025"
+        description:
+          type: string
+          description: Detailed description of taxonomy (optional)
+          example: "Updated profession codes for ABC Hospital system"
+        taxonomy_type:
+          type: string
+          enum: [master, customer]
+          description: Type of taxonomy being ingested
+        file_name:
+          type: string
+          description: |
+            S3 file path or file URL
+            Format: s3://bucket/key or https://...
+          example: "s3://propelus-taxononomy-s3/Customer-999-999.xlsx"
+        columns:
+          $ref: '#/components/schemas/TaxonomyColumns'
+
+    TaxonomyColumns:
+      type: object
+      description: |
+        Column structure definition varies by taxonomy type:
+        - Master taxonomy: requires nodes, attributes, and profession
+        - Customer taxonomy: requires only profession (all others become attributes)
+      properties:
+        nodes:
+          type: array
+          description: Node columns with hierarchy levels (master taxonomy only)
+          items:
+            type: object
+            properties:
+              column_name:
+                type: string
+                example: "Industry"
+              level:
+                type: integer
+                example: 0
+          example:
+            - column_name: "Industry"
+              level: 0
+            - column_name: "Major Group"
+              level: 1
+            - column_name: "Minor Group"
+              level: 2
+        attributes:
+          type: array
+          description: |
+            Attribute column names
+            For customer taxonomy: auto-detected (all columns except profession)
+          items:
+            type: string
+          example: ["Taxonomy Code", "Description", "State"]
+        profession:
+          type: string
+          description: Column name containing profession/occupation name
+          example: "Profession Name"
+
     IngestionResponse:
       type: object
       properties:
         load_id:
           type: integer
+          description: Unique identifier for this ingestion load
+        customer_id:
+          type: string
+          description: Customer identifier
+        taxonomy_id:
+          type: integer
+          description: Taxonomy identifier (auto-generated for new taxonomies)
         status:
           type: string
+          enum: [in progress, completed, failed]
+          description: Current status of ingestion
+        load_type:
+          type: string
+          enum: [new, updated]
+          description: Auto-detected type (new taxonomy or update to existing)
         message:
           type: string
         records_count:
           type: integer
+          description: Number of rows/records processed
 
     TranslationRequest:
       type: object
@@ -301,8 +392,14 @@ components:
       properties:
         taxonomy_id:
           type: integer
+        customer_id:
+          type: string
+          description: Customer identifier in format subsystem-clientid
         name:
           type: string
+        description:
+          type: string
+          description: Human-friendly description (optional)
         type:
           type: string
           enum: [master, customer]

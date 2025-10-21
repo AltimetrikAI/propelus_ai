@@ -34,12 +34,13 @@ export async function deriveLoadType(
 export async function ensureSilverTaxonomy(pool: Pool, ctx: LoadContext): Promise<void> {
   const query = `
     INSERT INTO silver_taxonomies
-      (customer_id, taxonomy_id, taxonomy_name, taxonomy_type, status, created_at, last_updated_at, load_id)
+      (customer_id, taxonomy_id, taxonomy_name, description, taxonomy_type, status, created_at, last_updated_at, load_id)
     VALUES
-      ($1, $2, $3, $4, 'active', NOW(), NOW(), $5)
+      ($1, $2, $3, $4, $5, 'active', NOW(), NOW(), $6)
     ON CONFLICT (customer_id, taxonomy_id) DO UPDATE
     SET
       taxonomy_name = EXCLUDED.taxonomy_name,
+      description = EXCLUDED.description,
       last_updated_at = NOW(),
       load_id = EXCLUDED.load_id;
   `;
@@ -48,6 +49,7 @@ export async function ensureSilverTaxonomy(pool: Pool, ctx: LoadContext): Promis
     ctx.customerId,
     ctx.taxonomyId,
     ctx.taxonomyName,
+    ctx.description || null,
     ctx.taxonomyType,
     ctx.loadId,
   ]);

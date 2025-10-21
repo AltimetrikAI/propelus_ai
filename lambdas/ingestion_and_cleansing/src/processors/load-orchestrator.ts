@@ -23,6 +23,7 @@ export interface OrchestrationInput {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
+  description?: string;  // Optional human-friendly description
   rows: any[];
   layout: Layout;
   sourceType: 'api' | 's3';
@@ -52,6 +53,7 @@ export async function orchestrateLoad(
     customerId,
     taxonomyId,
     taxonomyName,
+    description,
     rows,
     layout,
     sourceType,
@@ -83,6 +85,7 @@ export async function orchestrateLoad(
       customerId,
       taxonomyId,
       taxonomyName,
+      description,
       taxonomyType,
       loadType,
       layout,

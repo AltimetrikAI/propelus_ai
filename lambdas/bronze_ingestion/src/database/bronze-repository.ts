@@ -13,7 +13,7 @@ import {
 } from '@propelus/shared';
 
 interface CreateLoadDetailsParams {
-  customerId: number;
+  customerId: string;
   taxonomyId: number;
   loadDetails: LoadDetails;
   loadType: string;

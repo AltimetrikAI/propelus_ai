@@ -18,8 +18,8 @@ export class BronzeLoadDetails {
   @PrimaryGeneratedColumn()
   load_id!: number;
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column()
   taxonomy_id!: number;
@@ -71,8 +71,8 @@ export class BronzeTaxonomies {
   @PrimaryGeneratedColumn()
   row_id!: number; // Renamed from 'id' per Data Engineer schema spec
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column({ nullable: true })
   taxonomy_id?: number;
@@ -113,8 +113,8 @@ export class BronzeProfessions {
   @PrimaryGeneratedColumn()
   id!: number;
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column('jsonb')
   row_json!: Record<string, any>;
@@ -138,8 +138,8 @@ export class BronzeDataSources {
   @PrimaryGeneratedColumn()
   source_id!: number;
 
-  @Column()
-  customer_id!: number;
+  @Column({ type: 'varchar', length: 255 })
+  customer_id!: string;
 
   @Column({ length: 50, nullable: true })
   source_type?: string; // 'api', 'file', 'manual', 'bucket'

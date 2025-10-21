@@ -1,7 +1,8 @@
 /**
  * Bronze Layer TypeScript Types
- * Updated: January 26, 2025
- * Matches database schema after migrations 013-014
+ * Updated: January 21, 2025
+ * Matches database schema after migrations 013-014, 026
+ * Migration 026: customer_id changed from number to string (VARCHAR(255))
  */
 
 /**
@@ -30,7 +31,7 @@ export type RowLoadStatus = 'completed' | 'in progress' | 'failed';
  */
 export interface BronzeLoadDetails {
   load_id: number;
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   load_details: Record<string, any>; // JSONB
   load_date: Date;
@@ -49,7 +50,7 @@ export interface BronzeLoadDetails {
 export interface BronzeTaxonomies {
   row_id: number;
   load_id: number;
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   row_json: Record<string, any>; // JSON
   load_date?: Date;
@@ -61,7 +62,7 @@ export interface BronzeTaxonomies {
  * Insert payload for bronze_load_details (fields with defaults omitted)
  */
 export interface BronzeLoadDetailsInsert {
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   load_details: Record<string, any>;
   load_start?: Date;
@@ -76,7 +77,7 @@ export interface BronzeLoadDetailsInsert {
  */
 export interface BronzeTaxonomiesInsert {
   load_id: number;
-  customer_id: number;
+  customer_id: string;
   taxonomy_id: number;
   row_json: Record<string, any>;
   row_load_status?: RowLoadStatus; // defaults to 'in progress'
@@ -106,7 +107,7 @@ export interface BronzeTaxonomiesUpdate {
  */
 export interface BronzeLoadDetailsFilter {
   load_id?: number;
-  customer_id?: number;
+  customer_id?: string;
   taxonomy_id?: number;
   load_status?: LoadStatus;
   load_active?: boolean;
@@ -122,7 +123,7 @@ export interface BronzeLoadDetailsFilter {
 export interface BronzeTaxonomiesFilter {
   row_id?: number;
   load_id?: number;
-  customer_id?: number;
+  customer_id?: string;
   taxonomy_id?: number;
   row_load_status?: RowLoadStatus;
   row_active?: boolean;

@@ -94,7 +94,7 @@ export type ProcessingStage =
 
 // Ingestion Types
 export interface IngestionData {
-  customer_id: number;
+  customer_id: string;  // Updated to string (VARCHAR 255) - v4.1.0
   taxonomy_id?: number;
   data: Record<string, any>[];
   type?: DataType;

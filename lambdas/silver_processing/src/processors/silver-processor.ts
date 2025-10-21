@@ -40,7 +40,7 @@ export class SilverProcessor {
    */
   async processBronzeLoad(
     loadId: number,
-    customerId: number,
+    customerId: string,
     taxonomyId: number
   ): Promise<ProcessingResult> {
     const startTime = Date.now();
@@ -142,7 +142,7 @@ export class SilverProcessor {
    * Get existing or create new Silver taxonomy
    */
   private async getOrCreateSilverTaxonomy(
-    customerId: number,
+    customerId: string,
     taxonomyId: number
   ): Promise<SilverTaxonomies> {
     const repo = AppDataSource.getRepository(SilverTaxonomies);
@@ -170,7 +170,7 @@ export class SilverProcessor {
    * Create or update profession record
    */
   private async createOrUpdateProfession(
-    customerId: number,
+    customerId: string,
     professionName: string,
     attributes: Record<string, any>
   ): Promise<SilverProfessions> {
