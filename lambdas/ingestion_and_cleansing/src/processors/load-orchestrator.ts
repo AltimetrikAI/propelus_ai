@@ -23,7 +23,7 @@ export interface OrchestrationInput {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
-  description?: string;  // Optional human-friendly description
+  taxonomyDescription?: string;  // Optional human-friendly description
   rows: any[];
   layout: Layout;
   sourceType: 'api' | 's3';
@@ -38,11 +38,18 @@ export interface OrchestrationResult {
   taxonomy_type: string;
   load_type: LoadType;
   rows_processed: number;
+  node_ids_processed: number[];  // For customer taxonomy remapping - only these nodes should be mapped
 }
 
 /**
  * Main orchestration function for complete load process
  * Follows algorithm §1-§8
+ *
+ * Returns node_ids_processed for customer taxonomy remapping:
+ * - For customer taxonomy updates, only nodes from this load should be remapped
+ * - The mapping Lambda must use node_ids_processed to limit remapping scope
+ * - This prevents reprocessing all nodes when update files contain partial subsets
+ * (Data engineer feedback: §4.3 and §4.4 - customer updates lack keys to track splits)
  */
 export async function orchestrateLoad(
   pool: Pool,
@@ -53,7 +60,7 @@ export async function orchestrateLoad(
     customerId,
     taxonomyId,
     taxonomyName,
-    description,
+    taxonomyDescription,
     rows,
     layout,
     sourceType,
@@ -85,7 +92,7 @@ export async function orchestrateLoad(
       customerId,
       taxonomyId,
       taxonomyName,
-      description,
+      taxonomyDescription,
       taxonomyType,
       loadType,
       layout,
@@ -98,10 +105,11 @@ export async function orchestrateLoad(
     // §6: Pre-populate dictionaries (append-only)
     await populateDictionaries(pool, ctx);
 
-    // §7: Transform rows → Silver (with reconciliation for updated loads)
+    // §7: Transform rows → Silver (with reconciliation for updated Master loads)
     await withTransaction(pool, async (cx) => {
-      // Create temp reconciliation tables if updated load (§7B)
-      if (ctx.loadType === 'updated') {
+      // Create temp reconciliation tables if updated Master load (§7B)
+      // Customer taxonomies skip reconciliation (no deactivation of nodes/attributes)
+      if (ctx.loadType === 'updated' && ctx.taxonomyType === 'master') {
         await createTempReconciliationTables(cx);
       }
 
@@ -115,19 +123,28 @@ export async function orchestrateLoad(
       // Maintains last_seen[level] state across all rows for parent resolution
       const ancestorResolver = new RollingAncestorResolver(cx);
 
+      // Track processed node_ids for customer taxonomy remapping (§4.3 data engineer feedback)
+      const processedNodeIds: number[] = [];
+
       // Process each row: bronze insert + silver transformation (§7)
       for (const srcRow of ctx.rows) {
-        await processRow(cx, ctx, srcRow, cache, ancestorResolver);
+        const nodeIds = await processRow(cx, ctx, srcRow, cache, ancestorResolver);
+        processedNodeIds.push(...nodeIds);
       }
 
       // Reconciliation: deactivate missing nodes/attributes (§7B.3, §7B.4)
-      if (ctx.loadType === 'updated') {
+      // NOTE: Only applies to Master taxonomies. Customer taxonomies do not deactivate
+      // because update files may contain partial subsets with no keys to track splits/changes.
+      if (ctx.loadType === 'updated' && ctx.taxonomyType === 'master') {
         await deactivateMissingNodes(cx, ctx.taxonomyId, ctx.customerId, ctx.loadId);
-        await deactivateMissingAttributes(cx, ctx.loadId);
+        await deactivateMissingAttributes(cx, ctx.taxonomyId, ctx.customerId, ctx.loadId);
       }
 
       // Write version record (§7A.3, §7B.5)
       await writeVersion(cx, ctx, ctx.loadType);
+
+      // Store processedNodeIds for return (customer taxonomy remapping)
+      (ctx as any).processedNodeIds = processedNodeIds;
     });
 
     // §8: Finalize load (compute row counts, set final status)
@@ -142,6 +159,7 @@ export async function orchestrateLoad(
       taxonomy_type: taxonomyType,
       load_type: loadType,
       rows_processed: rows.length,
+      node_ids_processed: (ctx as any).processedNodeIds || [],
     };
 
   } catch (err: any) {

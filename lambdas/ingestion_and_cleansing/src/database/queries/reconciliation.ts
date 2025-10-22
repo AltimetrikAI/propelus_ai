@@ -1,6 +1,10 @@
 /**
  * Reconciliation Queries (Algorithm §7B.3, §7B.4)
- * Soft-delete missing nodes and attributes in UPDATED loads
+ * Soft-delete missing nodes and attributes in UPDATED MASTER loads only
+ *
+ * NOTE: Customer taxonomies do NOT use reconciliation because:
+ * - Update files may contain partial subsets
+ * - No keys exist to track profession splits or attribute value changes
  */
 
 import { PoolClient } from 'pg';
@@ -65,7 +69,8 @@ export async function markLoadedAttribute(
 }
 
 /**
- * §7B.4: Deactivate nodes not in current load (soft-delete)
+ * §7B.3: Deactivate nodes not in current load (soft-delete)
+ * Master taxonomies only - NOT used for customer taxonomies
  */
 export async function deactivateMissingNodes(
   client: PoolClient,
@@ -97,6 +102,7 @@ export async function deactivateMissingNodes(
 
 /**
  * §7B.4: Deactivate attributes not in current load (soft-delete)
+ * Master taxonomies only - NOT used for customer taxonomies
  * Only for nodes belonging to this taxonomy
  */
 export async function deactivateMissingAttributes(

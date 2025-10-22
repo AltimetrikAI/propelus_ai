@@ -1,10 +1,10 @@
 -- ============================================================================
--- Migration 026: Change customer_id from BIGINT to VARCHAR(255)
+-- Migration 026: customer_id to VARCHAR(255) and add taxonomy_description
 -- ============================================================================
--- Date: 2025-01-21
--- Description: Update customer_id to support subsystem identifiers
---              Format: "subsystem-clientid" (e.g., "evercheck-719", "datasolutions-123")
---              This allows client subsystems to use their own naming conventions
+-- Description:
+--   1. Update customer_id to support subsystem identifiers
+--      Format: "subsystem-clientid" (e.g., "evercheck-719", "datasolutions-123")
+--   2. Add taxonomy_description field for human-friendly taxonomy names
 -- ============================================================================
 
 BEGIN;
@@ -38,7 +38,19 @@ ALTER TABLE bronze_taxonomies
 ALTER COLUMN customer_id TYPE VARCHAR(255);
 
 -- ============================================================================
--- STEP 3: Recreate foreign key constraints
+-- STEP 3: Add taxonomy_description field to silver_taxonomies
+-- ============================================================================
+
+-- Add taxonomy_description column
+ALTER TABLE silver_taxonomies
+ADD COLUMN IF NOT EXISTS taxonomy_description TEXT;
+
+-- Add index for taxonomy_description
+CREATE INDEX IF NOT EXISTS silver_taxonomies_desc_trgm_idx
+ON silver_taxonomies USING GIN (taxonomy_description gin_trgm_ops);
+
+-- ============================================================================
+-- STEP 4: Recreate foreign key constraints
 -- ============================================================================
 
 -- Recreate FK from bronze_load_details to silver_taxonomies
@@ -54,7 +66,7 @@ FOREIGN KEY (customer_id, taxonomy_id)
 REFERENCES silver_taxonomies(customer_id, taxonomy_id);
 
 -- ============================================================================
--- STEP 4: Update indexes if needed
+-- STEP 5: Update indexes if needed
 -- ============================================================================
 
 -- Recreate indexes that may have been affected
@@ -75,6 +87,7 @@ ON silver_taxonomies(customer_id);
 -- ============================================================================
 
 COMMENT ON COLUMN silver_taxonomies.customer_id IS 'Customer identifier in format: subsystem-clientid (e.g., evercheck-719, datasolutions-123). Allows client subsystems to use their own naming conventions.';
+COMMENT ON COLUMN silver_taxonomies.taxonomy_description IS 'Optional human-friendly description of the taxonomy for administrative purposes';
 COMMENT ON COLUMN bronze_load_details.customer_id IS 'Customer identifier matching silver_taxonomies.customer_id format';
 COMMENT ON COLUMN bronze_taxonomies.customer_id IS 'Customer identifier matching silver_taxonomies.customer_id format';
 
@@ -105,13 +118,15 @@ BEGIN
        bronze_load_type = 'character varying' AND
        bronze_tax_type = 'character varying' THEN
         RAISE NOTICE '=============================================================================';
-        RAISE NOTICE 'Migration 026: customer_id to VARCHAR - COMPLETED SUCCESSFULLY';
+        RAISE NOTICE 'Migration 026 - COMPLETED SUCCESSFULLY';
         RAISE NOTICE '=============================================================================';
-        RAISE NOTICE 'Updated Tables: silver_taxonomies, bronze_load_details, bronze_taxonomies';
-        RAISE NOTICE 'New Type: VARCHAR(255)';
-        RAISE NOTICE 'Format: subsystem-clientid (e.g., evercheck-719)';
-        RAISE NOTICE 'Foreign Keys: Recreated';
-        RAISE NOTICE 'Indexes: Recreated';
+        RAISE NOTICE 'Changes Applied:';
+        RAISE NOTICE '  1. customer_id: BIGINT → VARCHAR(255)';
+        RAISE NOTICE '     - Format: subsystem-clientid (e.g., evercheck-719)';
+        RAISE NOTICE '     - Tables: silver_taxonomies, bronze_load_details, bronze_taxonomies';
+        RAISE NOTICE '  2. Added taxonomy_description: TEXT field to silver_taxonomies';
+        RAISE NOTICE '  3. Foreign Keys: Recreated';
+        RAISE NOTICE '  4. Indexes: Recreated (including taxonomy_description GIN index)';
         RAISE NOTICE '=============================================================================';
     ELSE
         RAISE EXCEPTION 'Migration 026 failed: Column types not updated correctly';

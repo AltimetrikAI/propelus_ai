@@ -28,8 +28,8 @@ export class SilverTaxonomies {
   @Column({ length: 255 })
   name!: string;
 
-  @Column('text', { nullable: true })
-  description?: string;
+  @Column('text', { name: 'taxonomy_description', nullable: true })
+  taxonomyDescription?: string;
 
   @Column({ length: 20 })
   type!: string; // 'master' or 'customer'

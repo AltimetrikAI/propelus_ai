@@ -26,7 +26,7 @@ export interface SilverTaxonomy {
   taxonomy_id: number;
   customer_id: string;
   name: string;
-  description?: string;
+  taxonomyDescription?: string;
   type: 'master' | 'customer';
   status: SilverStatus;
   created_at: Date;

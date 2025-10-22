@@ -10,7 +10,7 @@ export interface ApiData {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
-  description?: string;
+  taxonomyDescription?: string;
   layout: Layout;
   rows: any[];
 }
@@ -19,7 +19,7 @@ export interface ApiExtractedData {
   customerId: string;
   taxonomyId: string;
   taxonomyName?: string;
-  description?: string;
+  taxonomyDescription?: string;
   rows: any[];
 }
 
@@ -32,7 +32,7 @@ export function extractApiIds(payload: any): ApiExtractedData {
     customerId: payload.customer_id || payload.customerId,
     taxonomyId: payload.taxonomy_id || payload.taxonomyId,
     taxonomyName: payload.taxonomy_name || payload.taxonomyName,
-    description: payload.description,
+    taxonomyDescription: payload.taxonomy_description || payload.taxonomyDescription,
     rows: payload.rows || [],
   };
 }

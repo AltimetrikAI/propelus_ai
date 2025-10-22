@@ -18,7 +18,7 @@ export interface LoadContext {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
-  description?: string;  // Optional human-friendly description
+  taxonomyDescription?: string;  // Optional human-friendly description
   taxonomyType: TaxonomyType;
   loadType: LoadType;
   layout: Layout;

@@ -28,6 +28,8 @@ interface NodePiece {
  * - Parent resolution uses rolling ancestor memory across rows
  * - Supports level 0 (root node)
  * - Multi-valued cells create sibling nodes under same parent
+ *
+ * @returns Array of node_ids created/updated by this row (for customer taxonomy remapping)
  */
 export async function processRow(
   client: PoolClient,
@@ -35,7 +37,7 @@ export async function processRow(
   srcRow: any,
   cache: DictionaryCache,
   ancestorResolver: RollingAncestorResolver
-): Promise<void> {
+): Promise<number[]> {
   // Insert raw row into bronze_taxonomies
   const rowId = await insertBronzeRow(client, ctx, srcRow);
 
@@ -43,24 +45,28 @@ export async function processRow(
     // Safe getter with normalization
     const rowGet = (colName: string) => normalize(srcRow[colName] ?? '');
 
+    let nodeIds: number[] = [];
     if (ctx.taxonomyType === 'master') {
-      await processMasterRow(client, ctx, srcRow, rowId, cache, ancestorResolver, rowGet);
+      nodeIds = await processMasterRow(client, ctx, srcRow, rowId, cache, ancestorResolver, rowGet);
     } else {
-      await processCustomerRow(client, ctx, srcRow, rowId, cache, rowGet);
+      nodeIds = await processCustomerRow(client, ctx, srcRow, rowId, cache, rowGet);
     }
 
     // Mark bronze row as completed
     await setBronzeRowStatus(client, rowId, 'completed');
+    return nodeIds;
   } catch (error: any) {
     // Mark bronze row as failed and append error
     await setBronzeRowStatus(client, rowId, 'failed');
     await appendRowError(client, ctx.loadId, rowId, String(error));
+    return []; // Return empty array on error
   }
 }
 
 /**
  * Process Master taxonomy row (v1.0)
  * §7.1: Single-node row with rolling ancestor parent resolution
+ * @returns Array of node_ids created by this row
  */
 async function processMasterRow(
   client: PoolClient,
@@ -70,7 +76,7 @@ async function processMasterRow(
   cache: DictionaryCache,
   ancestorResolver: RollingAncestorResolver,
   rowGet: (colName: string) => string
-): Promise<void> {
+): Promise<number[]> {
   const masterLayout = ctx.layout as LayoutMaster;
 
   // §7.1.1: Extract explicit level and node value(s) from row
@@ -90,7 +96,7 @@ async function processMasterRow(
 
   // Skip if no node found
   if (!nodeLevel || rawValues.length === 0) {
-    return;
+    return [];
   }
 
   // §2.3: Extract profession from ProfessionColumn (informational, not a node)
@@ -110,6 +116,7 @@ async function processMasterRow(
   const nodeTypeId = await ensureNodeType(client, nodeLevel.name, ctx.loadId, cache);
 
   // §7.1.1: Create node(s) at level L (multi-valued cells create siblings)
+  const createdNodeIds: number[] = [];
   let lastCreatedNodeId: number | null = null;
 
   for (const value of rawValues) {
@@ -131,6 +138,7 @@ async function processMasterRow(
       await markLoadedNode(client, ctx.taxonomyId, ctx.customerId, nodeTypeId, value);
     }
 
+    createdNodeIds.push(nodeId);
     lastCreatedNodeId = nodeId;
   }
 
@@ -152,11 +160,13 @@ async function processMasterRow(
       rowGet
     );
   }
+
+  return createdNodeIds;
 }
 
 /**
  * Process Customer taxonomy row
- * Customer taxonomy logic remains unchanged from previous version
+ * @returns Array containing the single node_id created by this row
  */
 async function processCustomerRow(
   client: PoolClient,
@@ -165,13 +175,13 @@ async function processCustomerRow(
   rowId: number,
   cache: DictionaryCache,
   rowGet: (colName: string) => string
-): Promise<void> {
+): Promise<number[]> {
   const customerLayout = ctx.layout as LayoutCustomer;
   const professionCol = customerLayout['Proffesion column'].Profession;
   const value = rowGet(professionCol);
 
   if (!value) {
-    return; // Skip empty rows
+    return []; // Skip empty rows
   }
 
   // Ensure node type exists
@@ -202,6 +212,8 @@ async function processCustomerRow(
   );
 
   await processAttributes(client, ctx, srcRow, rowId, nodeId, attributeColumns, cache, rowGet);
+
+  return [nodeId];
 }
 
 /**

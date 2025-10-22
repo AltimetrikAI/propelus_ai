@@ -7,7 +7,7 @@ info:
     **Updated**: January 21, 2025
     **Changes**:
     - customer_id changed from integer to string (format: subsystem-clientid)
-    - Added description field to taxonomies
+    - Added taxonomy_description field to taxonomies
     - Auto-detect new vs updated taxonomies (no manual flag required)
     - Enhanced column structure definition for master vs customer taxonomies
   version: 1.1.0
@@ -240,7 +240,7 @@ components:
           type: string
           description: Human-friendly taxonomy name (optional)
           example: "ABC Hospital Professions 2025"
-        description:
+        taxonomy_description:
           type: string
           description: Detailed description of taxonomy (optional)
           example: "Updated profession codes for ABC Hospital system"
@@ -397,7 +397,7 @@ components:
           description: Customer identifier in format subsystem-clientid
         name:
           type: string
-        description:
+        taxonomy_description:
           type: string
           description: Human-friendly description (optional)
         type:

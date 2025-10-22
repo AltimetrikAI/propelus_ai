@@ -14,7 +14,7 @@ export interface ApiProcessorResult {
   customerId: string;
   taxonomyId: string;
   taxonomyName: string;
-  description?: string;
+  taxonomyDescription?: string;
   rows: any[];
   layout: Layout;
 }
@@ -56,7 +56,7 @@ export async function processApiEvent(event: ApiEvent & { payload?: ApiPayload }
     customerId: normalize(extracted.customerId),
     taxonomyId: normalize(extracted.taxonomyId),
     taxonomyName: normalize(extracted.taxonomyName || extracted.taxonomyId),
-    description: extracted.description ? normalize(extracted.description) : undefined,
+    taxonomyDescription: extracted.taxonomyDescription ? normalize(extracted.taxonomyDescription) : undefined,
     rows: extracted.rows,
     layout,
   };

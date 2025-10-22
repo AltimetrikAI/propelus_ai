@@ -58,6 +58,10 @@ export class MappingEngine {
 
   /**
    * Process mappings for a customer taxonomy
+   *
+   * @param nodeIds - IMPORTANT: For customer taxonomy updates, this MUST be provided with only
+   *                  the node_ids from the current load. Customer update files may contain partial
+   *                  subsets without keys to track splits/changes. (Data engineer feedback §4.3, §4.4)
    */
   async processMappings(
     customerId: string,  // Updated to string (VARCHAR 255) - v4.1.0
